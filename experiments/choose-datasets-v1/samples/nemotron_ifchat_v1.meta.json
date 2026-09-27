@@ -1,0 +1,317 @@
+{
+  "name": "nemotron_ifchat_v1",
+  "repo": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet",
+  "file_filter": "/partial-chat_if/",
+  "files": 10,
+  "rows_total": 315457,
+  "row_groups_total": 494,
+  "population": {
+    "reasoning": {
+      "counts": {
+        "off": 202515,
+        "on": 112942
+      }
+    },
+    "capability_target": {
+      "counts": {
+        "chat": 249481,
+        "instruction_following": 65976
+      }
+    }
+  },
+  "row_group_spread": {
+    "column": "reasoning",
+    "value": "off",
+    "share_min": 0.5918367346938775,
+    "share_median": 0.642080653601391,
+    "share_max": 0.6933115823817292
+  },
+  "row_groups_drawn": [
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0008.parquet",
+      "row_group": 13,
+      "rows": 637,
+      "kept": 150,
+      "bytes": 5616177
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0008.parquet",
+      "row_group": 7,
+      "rows": 654,
+      "kept": 150,
+      "bytes": 5573068
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0006.parquet",
+      "row_group": 0,
+      "rows": 618,
+      "kept": 150,
+      "bytes": 5675216
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0007.parquet",
+      "row_group": 41,
+      "rows": 638,
+      "kept": 150,
+      "bytes": 5661048
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0009.parquet",
+      "row_group": 30,
+      "rows": 619,
+      "kept": 150,
+      "bytes": 5655708
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0002.parquet",
+      "row_group": 45,
+      "rows": 647,
+      "kept": 150,
+      "bytes": 5701939
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0004.parquet",
+      "row_group": 33,
+      "rows": 638,
+      "kept": 150,
+      "bytes": 5645296
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0001.parquet",
+      "row_group": 16,
+      "rows": 642,
+      "kept": 150,
+      "bytes": 5596988
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0008.parquet",
+      "row_group": 37,
+      "rows": 639,
+      "kept": 150,
+      "bytes": 5604354
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0005.parquet",
+      "row_group": 32,
+      "rows": 646,
+      "kept": 150,
+      "bytes": 5583205
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0005.parquet",
+      "row_group": 0,
+      "rows": 664,
+      "kept": 150,
+      "bytes": 5603244
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0009.parquet",
+      "row_group": 6,
+      "rows": 644,
+      "kept": 150,
+      "bytes": 5638321
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0008.parquet",
+      "row_group": 33,
+      "rows": 645,
+      "kept": 150,
+      "bytes": 5605377
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0001.parquet",
+      "row_group": 7,
+      "rows": 670,
+      "kept": 150,
+      "bytes": 5659428
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0003.parquet",
+      "row_group": 41,
+      "rows": 616,
+      "kept": 150,
+      "bytes": 5571909
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0001.parquet",
+      "row_group": 49,
+      "rows": 611,
+      "kept": 150,
+      "bytes": 5640192
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0004.parquet",
+      "row_group": 44,
+      "rows": 664,
+      "kept": 150,
+      "bytes": 5583697
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0009.parquet",
+      "row_group": 7,
+      "rows": 627,
+      "kept": 150,
+      "bytes": 5659254
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0003.parquet",
+      "row_group": 31,
+      "rows": 630,
+      "kept": 150,
+      "bytes": 5676423
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0005.parquet",
+      "row_group": 47,
+      "rows": 616,
+      "kept": 150,
+      "bytes": 5696730
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0006.parquet",
+      "row_group": 19,
+      "rows": 642,
+      "kept": 150,
+      "bytes": 5664312
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0007.parquet",
+      "row_group": 8,
+      "rows": 640,
+      "kept": 150,
+      "bytes": 5616679
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0006.parquet",
+      "row_group": 47,
+      "rows": 668,
+      "kept": 150,
+      "bytes": 5629525
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0008.parquet",
+      "row_group": 48,
+      "rows": 620,
+      "kept": 150,
+      "bytes": 5685316
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0000.parquet",
+      "row_group": 7,
+      "rows": 682,
+      "kept": 150,
+      "bytes": 5644811
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0006.parquet",
+      "row_group": 9,
+      "rows": 648,
+      "kept": 150,
+      "bytes": 5579621
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0002.parquet",
+      "row_group": 3,
+      "rows": 629,
+      "kept": 150,
+      "bytes": 5545181
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0002.parquet",
+      "row_group": 0,
+      "rows": 618,
+      "kept": 150,
+      "bytes": 5617609
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0005.parquet",
+      "row_group": 8,
+      "rows": 671,
+      "kept": 150,
+      "bytes": 5613633
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0004.parquet",
+      "row_group": 32,
+      "rows": 654,
+      "kept": 150,
+      "bytes": 5663367
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0005.parquet",
+      "row_group": 4,
+      "rows": 676,
+      "kept": 150,
+      "bytes": 5574342
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0000.parquet",
+      "row_group": 46,
+      "rows": 659,
+      "kept": 150,
+      "bytes": 5568672
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0001.parquet",
+      "row_group": 20,
+      "rows": 654,
+      "kept": 150,
+      "bytes": 5643809
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0000.parquet",
+      "row_group": 42,
+      "rows": 692,
+      "kept": 150,
+      "bytes": 5628019
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0000.parquet",
+      "row_group": 12,
+      "rows": 629,
+      "kept": 150,
+      "bytes": 5609460
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0006.parquet",
+      "row_group": 3,
+      "rows": 652,
+      "kept": 150,
+      "bytes": 5632340
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0008.parquet",
+      "row_group": 10,
+      "rows": 629,
+      "kept": 150,
+      "bytes": 5682330
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0007.parquet",
+      "row_group": 3,
+      "rows": 664,
+      "kept": 150,
+      "bytes": 5591591
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0002.parquet",
+      "row_group": 29,
+      "rows": 666,
+      "kept": 150,
+      "bytes": 5636048
+    },
+    {
+      "file": "datasets/nvidia/Nemotron-Instruction-Following-Chat-v1@refs%2Fconvert%2Fparquet/default/partial-chat_if/0005.parquet",
+      "row_group": 40,
+      "rows": 621,
+      "kept": 150,
+      "bytes": 5636097
+    }
+  ],
+  "bytes_downloaded": 225110336,
+  "rows_sampled": 6000,
+  "seed": [
+    20260926,
+    0
+  ]
+}

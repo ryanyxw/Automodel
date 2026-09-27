@@ -1,0 +1,697 @@
+<!doctype html>
+<!-- Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+     Licensed under the Apache License, Version 2.0. Template for experiments/derisk-v1/make_report.py:
+     the generator fills choose-datasets-v1: where do random pad tokens pay off?, <header class="page"><div><h1>Choosing a dataset where random pad tokens pay off (choose-datasets-v1)</h1><div class="meta">Generated 2026-09-26 23:21 UTC · phase 1: CPU screen, no GPU runs · Nemotron 3 Nano 30B-A3B SFT, 8× H100, FSDP2 + EP=8 · follows <a href="../derisk-v2/index.html">derisk-v2</a></div></div><button type="button" id="theme-toggle">Theme: auto</button></header>
+<p class="lede">derisk-v2 showed that filling padding with random token ids instead of <code>&lt;|im_end|&gt;</code> cuts step time by 12% when every micro-batch is padded to 8,192 tokens, but by about 1% when each micro-batch is padded only to its longest sequence (batchmax) on Tulu-3. This screen asks which natural SFT dataset would make the batchmax gain largest. Each candidate is sampled from the Hub, tokenized exactly as the recipe does, and run through derisk's data order; a model calibrated on the derisk-v1/v2 routing counts and step times then predicts EP imbalance and step time with <code>&lt;|im_end|&gt;</code> pads and with random pads. No GPU runs yet: the top candidates go to a short A/B once approved.</p>
+<h2 id="findings">Findings</h2><div class="findings"><ul><li><b>Mixture-of-Thoughts</b> at truncation 8,192: padding 28.0%, 11,645 tokens per micro-batch, EP imbalance 1.52× → 1.35× with random pads, predicted step time 9.80 s → 9.45 s (<b>−3.6%</b>, 0.35 s).</li><li><b>Nemotron IF-Chat-v1</b> at truncation 8,192: padding 30.1%, 9,491 tokens per micro-batch, EP imbalance 1.56× → 1.37× with random pads, predicted step time 8.66 s → 8.35 s (<b>−3.6%</b>, 0.31 s).</li><li><b>WildChat-1M</b> at truncation 8,192: padding 33.7%, 3,895 tokens per micro-batch, EP imbalance 1.61× → 1.40× with random pads, predicted step time 5.56 s → 5.42 s (<b>−2.6%</b>, 0.14 s).</li><li><b>Tulu-3 baseline</b>: 1.8% predicted at 8,192; at derisk's 4,096 1.6% predicted vs 1.1% measured in derisk-v2 (warm pass).</li></ul></div>
+<h2 id="interpretation">Interpretation</h2><div class="panel"><h3>Short answer</h3>
+<p>Two candidates tie. <b>Nemotron IF-Chat-v1</b> and <b>Mixture-of-Thoughts</b> are both predicted to cut step time by
+<b>3.6%</b> with random pad tokens at truncation 8,192 and 2 sequences per GPU (0.31 s and 0.35 s per step). That is
+twice Tulu-3's 1.8% at the same truncation; at derisk's 4,096, Tulu-3 is 1.6% predicted and 1.1% measured. WildChat-1M
+comes third at 2.6%.</p>
+<p><b>Proposed pick: Nemotron IF-Chat-v1</b>, with Mixture-of-Thoughts as the second A/B arm. IF-Chat ties on the
+predicted gain, is Nemotron 3 Nano's own SFT data, and loses less to truncation at 8,192: 12% of samples are cut,
+against 24% of Mixture-of-Thoughts (mostly its Codeforces traces, which average 13k tokens).</p>
+
+<h3>Why the dataset with the highest EP imbalance does not win</h3>
+<ul>
+<li>With <code>&lt;|im_end|&gt;</code> pads, Tulu-3 (1.62×) and WildChat (1.61×) have the highest EP imbalance.
+Their heavy-tailed lengths give them the most padding, about 34%. But their micro-batches are small (2.2k and 3.9k
+tokens per GPU), so the expert work that the imbalance stretches is a small part of each step.</li>
+<li>IF-Chat and Mixture-of-Thoughts pad less (30% and 28%) but put 9.5k–11.6k tokens in each micro-batch. Each point
+of imbalance therefore costs them three to four times more time.</li>
+<li>With 2 sequences per GPU, the padding share cannot exceed 50% whatever the dataset, and all four land at 28–35%.
+What a dataset really changes is micro-batch size. Even the best natural dataset stays far below derisk-v2's 12% at
+fixed 8,192 padding, where 91% of tokens were pads.</li>
+</ul>
+
+<h3>Things the screen turned up</h3>
+<ul>
+<li><b>IF-Chat's long samples are its reasoning-off chats</b> (64% of rows, median 3,778 tokens, multi-turn), not
+its reasoning-on rows (median 1,306). The Nano chat template keeps only the final assistant turn's reasoning, and
+reasoning-on rows are mostly short instruction-following prompts.</li>
+<li><b>IF-Chat does not load in <code>ChatDataset</code> with Nano's stock chat template.</b> About a third of rows
+are multi-turn with reasoning, and they fail the answer-only loss mask because the template rewrites earlier turns
+(it drops their <code>&lt;think&gt;</code>). A copy of the template with <code>{% generation %}</code> markers
+(<code>templates/nano3_generation.jinja</code>) fixes this:
+<ul>
+<li>On 900 checked conversations it renders identical text.</li>
+<li>On the 797 conversations the stock path can mask, it produces identical loss masks.</li>
+</ul>
+The IF-Chat A/B would use it.</li>
+<li><b><code>ChatDataset</code>'s JSONL reader splits files with <code>str.splitlines()</code></b>, which also
+breaks on U+2028, U+2029 and U+0085 inside JSON strings. 32 of the 6,000 WildChat rows contain them, so JSONL written
+with raw Unicode fails to load. The samples here are written with ASCII escapes. The reader itself is an AutoModel
+bug and is left for a separate fix.</li>
+<li><code>nvidia/Nemotron-Post-Training-Dataset-v2</code>, the mix used by AutoModel's Nano-30B example, was not
+screened. It is gated, and this HF account has not accepted its terms.</li>
+</ul>
+
+<h3>How far to trust the predictions</h3>
+<ul>
+<li>The model is calibrated on six derisk runs, all on Tulu-3, and it overpredicts where micro-batches are small.
+Against the derisk-v2 batchmax runs (Tulu-3 at 4,096, about 2k tokens per micro-batch, per-step paired
+differences):
+<ul>
+<li>Random pads: 1.6% predicted vs 1.1% ± 0.4% measured.</li>
+<li>Masked natural filler: 1.6% predicted vs 0.2% ± 0.3%.</li>
+<li>Visible natural filler: 3.7% predicted vs 1.0% ± 0.5%.</li>
+</ul>
+IF-Chat's and Mixture-of-Thoughts' micro-batches are 4–5× larger. That is closer to the fixed-8,192 runs, where the
+model fits within 0.04 s, but expect their realized saving to fall somewhat below 3.6%. The small-batch bias also
+means the gap to WildChat and Tulu-3 is, if anything, larger than shown.</li>
+<li>The savings assume warm shape caches, as in derisk-v2's second pass. In a first pass, every new sequence length
+costs about 1 s of cuDNN plan building (derisk-v1), which dilutes the gain.</li>
+<li>WildChat's files are ordered by time. Its sample over-represents GPT-4 conversations, which run longer (15% vs
+12% for <code>gpt-4-1106-preview</code>), so its prediction is slightly optimistic. The other two samples match
+their splits to within 0.3 points.</li>
+</ul>
+
+<h3>Bigger levers than the dataset</h3>
+<ul>
+<li><b>Pads the router sees in context.</b> derisk-v2.3b's visible natural filler routed like real text (1.15×
+imbalance at fixed 8,192). Modeled that way, it would save 7.9% on IF-Chat and 7.8% on Mixture-of-Thoughts at
+8,192. That is an upper bound: at Tulu's small micro-batches the same model predicted 3.7% and 1.0% was
+measured.</li>
+<li><b>4 sequences per GPU at truncation 4,096.</b> The largest micro-batch is then 16k tokens, the same size that
+fit in derisk. Predicted savings: 3.2% on Tulu-3 and 3.8–4.1% on IF-Chat and WildChat. At 8,192, 4 per GPU predicts
+5.5–5.8% on IF-Chat and Mixture-of-Thoughts, but allows 32k-token micro-batches, which ran out of memory in
+derisk-v1.</li>
+<li><b>Keeping pads out of the experts.</b> DeepEP already skips tokens routed to index −1. Doing this would remove
+the hot spot and the wasted expert work outright, rather than spreading them.</li>
+</ul>
+
+<h3>Proposed next step (phase 2, not run)</h3>
+<p>A/B on IF-Chat and Mixture-of-Thoughts at truncation 8,192 with 2 sequences per GPU: <code>&lt;|im_end|&gt;</code>
+pads vs random pads, two passes of 20 steps each (derisk-v2's protocol), run one after another. That is 4 runs, about
+an hour of GPU time.</p>
+<p>Compare the arms step by step. Both arms see identical data in identical order, so pairing cuts the standard error
+3–5× (0.015–0.020 s instead of about 0.06 s on derisk's batchmax runs). A 3% effect on a roughly 9 s step is then
+many standard errors from zero.</p>
+</div>
+<h2 id="ranking">Ranking</h2><div data-chart="saving"></div><div class="grid2"><div data-chart="padshare"></div><div data-chart="tokens"></div></div><div class="grid2"><div data-chart="imbalance"></div><div data-chart="lbs"></div></div>
+<div class="panel"><table><thead><tr><th class="text">Dataset · truncation</th><th class="">Padding</th><th class="">Tokens / micro-batch</th><th class="">Pad tokens / micro-batch</th><th class="">EP imbalance, &lt;|im_end|&gt; → random</th><th class="">Step time, &lt;|im_end|&gt;</th><th class="">Saving</th><th class="">Saving %</th><th class="">Effective-MFU gain</th><th class="">Saving, text-like pads</th></tr></thead><tbody><tr><td class="text">Tulu-3 (baseline) · 8,192</td><td class="">34.5%</td><td class="">2,242</td><td class="">774</td><td class="">1.62× → 1.41×</td><td class="">4.62 s</td><td class="">0.08 s<br><span class="note" style="white-space:nowrap">0.08–0.09</span></td><td class="">1.8%<br><span class="note" style="white-space:nowrap">1.7–1.9</span></td><td class="">1.9%</td><td class="">4.1%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 8,192</td><td class="">30.1%</td><td class="">9,491</td><td class="">2,861</td><td class="">1.56× → 1.37×</td><td class="">8.66 s</td><td class="">0.31 s<br><span class="note" style="white-space:nowrap">0.30–0.32</span></td><td class="">3.6%<br><span class="note" style="white-space:nowrap">3.5–3.6</span></td><td class="">3.7%</td><td class="">7.9%</td></tr><tr><td class="text">Mixture-of-Thoughts · 8,192</td><td class="">28.0%</td><td class="">11,645</td><td class="">3,256</td><td class="">1.52× → 1.35×</td><td class="">9.80 s</td><td class="">0.35 s<br><span class="note" style="white-space:nowrap">0.34–0.36</span></td><td class="">3.6%<br><span class="note" style="white-space:nowrap">3.5–3.6</span></td><td class="">3.7%</td><td class="">7.8%</td></tr><tr><td class="text">WildChat-1M · 8,192</td><td class="">33.7%</td><td class="">3,895</td><td class="">1,312</td><td class="">1.61× → 1.40×</td><td class="">5.56 s</td><td class="">0.14 s<br><span class="note" style="white-space:nowrap">0.14–0.15</span></td><td class="">2.6%<br><span class="note" style="white-space:nowrap">2.5–2.6</span></td><td class="">2.6%</td><td class="">5.8%</td></tr><tr><td class="text">Tulu-3 (baseline) · 4,096</td><td class="">33.2%</td><td class="">2,062</td><td class="">685</td><td class="">1.60× → 1.40×</td><td class="">4.51 s</td><td class="">0.07 s<br><span class="note" style="white-space:nowrap">0.07–0.08</span></td><td class="">1.6%<br><span class="note" style="white-space:nowrap">1.6–1.7</span></td><td class="">1.7%</td><td class="">3.7%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 4,096</td><td class="">23.9%</td><td class="">6,498</td><td class="">1,556</td><td class="">1.45× → 1.31×</td><td class="">6.86 s</td><td class="">0.17 s<br><span class="note" style="white-space:nowrap">0.16–0.17</span></td><td class="">2.4%<br><span class="note" style="white-space:nowrap">2.3–2.5</span></td><td class="">2.5%</td><td class="">5.1%</td></tr><tr><td class="text">Mixture-of-Thoughts · 4,096</td><td class="">20.6%</td><td class="">7,165</td><td class="">1,474</td><td class="">1.40× → 1.27×</td><td class="">7.16 s</td><td class="">0.16 s<br><span class="note" style="white-space:nowrap">0.15–0.16</span></td><td class="">2.2%<br><span class="note" style="white-space:nowrap">2.1–2.2</span></td><td class="">2.2%</td><td class="">4.4%</td></tr><tr><td class="text">WildChat-1M · 4,096</td><td class="">31.8%</td><td class="">3,472</td><td class="">1,104</td><td class="">1.58× → 1.39×</td><td class="">5.30 s</td><td class="">0.12 s<br><span class="note" style="white-space:nowrap">0.12–0.12</span></td><td class="">2.3%<br><span class="note" style="white-space:nowrap">2.2–2.3</span></td><td class="">2.3%</td><td class="">5.0%</td></tr></tbody></table><p class="note">Last column: upper bound if pads route like text (derisk-v2.3b's visible natural filler); see the held-out check below before trusting it. 2 sequences per GPU, 8 GPUs, global batch 128 (derisk's setup). Mean over 20 random 2,560-sample orders (5th–95th percentile below each saving; this is sampling spread, not model error). Tokens are per GPU. Effective-MFU gain = real tokens per second with random pads ÷ with <code>&lt;|im_end|&gt;</code> pads − 1.</p></div>
+<h2 id="lengths">Length distributions</h2><div data-chart="cdf"></div>
+<div class="panel"><table><thead><tr><th class="text">Dataset</th><th class="">Rows in split</th><th class="">Sampled</th><th class="">Mean</th><th class="">Median</th><th class="">p90</th><th class="">p99</th><th class="">Max</th><th class="">Cut at 4,096</th><th class="">Cut at 8,192</th><th class="">Loss tokens @8,192</th><th class="">No loss tokens @8,192</th></tr></thead><tbody><tr><td class="text">Tulu-3 (baseline)</td><td class="">939,343</td><td class="">6,000</td><td class="">795</td><td class="">449</td><td class="">1,447</td><td class="">6,301</td><td class="">45,731</td><td class="">1.7%</td><td class="">0.8%</td><td class="">488</td><td class="">0.15%</td></tr><tr><td class="text">Nemotron IF-Chat-v1</td><td class="">315,457</td><td class="">6,000</td><td class="">3,768</td><td class="">2,356</td><td class="">8,914</td><td class="">17,200</td><td class="">35,060</td><td class="">31.7%</td><td class="">11.9%</td><td class="">2,951</td><td class="">0.00%</td></tr><tr><td class="text">Mixture-of-Thoughts</td><td class="">349,317</td><td class="">6,000</td><td class="">5,818</td><td class="">3,500</td><td class="">15,652</td><td class="">23,966</td><td class="">27,524</td><td class="">45.3%</td><td class="">23.7%</td><td class="">3,909</td><td class="">0.00%</td></tr><tr><td class="text">WildChat-1M</td><td class="">837,989</td><td class="">6,000</td><td class="">1,457</td><td class="">868</td><td class="">2,910</td><td class="">11,505</td><td class="">73,068</td><td class="">5.4%</td><td class="">1.6%</td><td class="">839</td><td class="">0.48%</td></tr></tbody></table><p class="note">Untruncated token counts per sample as <code>ChatDataset</code> renders them. For IF-Chat the Hub parquet export holds 315,457 of the split's 426,009 rows. Every sample tokenized; none rejected.</p></div>
+<h3 style="margin-top:18px">Length by subset</h3><div class="panel"><table><thead><tr><th class="text">Subset</th><th class="">Share</th><th class="">Mean</th><th class="">Median</th><th class="">Mean @8,192</th></tr></thead><tbody><tr><td class="text">Nemotron IF-Chat-v1 · reasoning = off</td><td class="">64%</td><td class="">4,954</td><td class="">3,778</td><td class="">4,251</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · reasoning = on</td><td class="">36%</td><td class="">1,651</td><td class="">1,306</td><td class="">1,648</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · capability_target = chat</td><td class="">79%</td><td class="">4,327</td><td class="">2,982</td><td class="">3,757</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · capability_target = instruction_following</td><td class="">21%</td><td class="">1,643</td><td class="">1,290</td><td class="">1,638</td></tr><tr><td class="text">Mixture-of-Thoughts · source = nvidia/Llama-Nemotron-Post-Training-Dataset</td><td class="">49%</td><td class="">2,203</td><td class="">1,483</td><td class="">2,200</td></tr><tr><td class="text">Mixture-of-Thoughts · source = open-r1/OpenR1-Math-220k</td><td class="">27%</td><td class="">6,023</td><td class="">4,968</td><td class="">5,151</td></tr><tr><td class="text">Mixture-of-Thoughts · source = open-r1/codeforces-cots</td><td class="">24%</td><td class="">12,964</td><td class="">12,881</td><td class="">7,254</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0613</td><td class="">51%</td><td class="">1,080</td><td class="">859</td><td class="">1,080</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0301</td><td class="">17%</td><td class="">1,075</td><td class="">649</td><td class="">1,075</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-1106-preview</td><td class="">15%</td><td class="">2,597</td><td class="">986</td><td class="">1,967</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-0125-preview</td><td class="">7%</td><td class="">3,008</td><td class="">977</td><td class="">2,002</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-0314</td><td class="">5%</td><td class="">1,418</td><td class="">869</td><td class="">1,416</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0125</td><td class="">5%</td><td class="">1,076</td><td class="">1,143</td><td class="">1,019</td></tr></tbody></table></div>
+<h2 id="sampling">Are the samples representative?</h2><p class="note">Rows come from randomly drawn parquet row groups across all files of each split (probability ∝ rows), a random subset of each. The split-wide shares come from reading the small metadata columns of every row.</p><div class="panel"><table><thead><tr><th class="text">Category</th><th class="">Whole split</th><th class="">Sample</th></tr></thead><tbody><tr><td class="text">Nemotron IF-Chat-v1 · reasoning = off</td><td class="">64.2%</td><td class="">64.1%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · reasoning = on</td><td class="">35.8%</td><td class="">35.9%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · capability_target = chat</td><td class="">79.1%</td><td class="">79.2%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · capability_target = instruction_following</td><td class="">20.9%</td><td class="">20.8%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · read</td><td class="">40 of 494 row groups</td><td class="">225 MB</td></tr><tr><td class="text">Mixture-of-Thoughts · source = nvidia/Llama-Nemotron-Post-Training-Dataset</td><td class="">49.4%</td><td class="">49.2%</td></tr><tr><td class="text">Mixture-of-Thoughts · source = open-r1/OpenR1-Math-220k</td><td class="">26.8%</td><td class="">26.7%</td></tr><tr><td class="text">Mixture-of-Thoughts · source = open-r1/codeforces-cots</td><td class="">23.8%</td><td class="">24.1%</td></tr><tr><td class="text">Mixture-of-Thoughts · read</td><td class="">30 of 360 row groups</td><td class="">259 MB</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0613</td><td class="">44.3%</td><td class="">50.8%</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0301</td><td class="">23.3%</td><td class="">17.4%</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-1106-preview</td><td class="">11.8%</td><td class="">15.0%</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-0125-preview</td><td class="">7.4%</td><td class="">7.0%</td></tr><tr><td class="text">WildChat-1M · language = English</td><td class="">58.5%</td><td class="">57.4%</td></tr><tr><td class="text">WildChat-1M · language = Chinese</td><td class="">14.6%</td><td class="">13.9%</td></tr><tr><td class="text">WildChat-1M · language = Russian</td><td class="">10.7%</td><td class="">10.1%</td></tr><tr><td class="text">WildChat-1M · language = French</td><td class="">3.3%</td><td class="">3.5%</td></tr><tr><td class="text">WildChat-1M · read</td><td class="">40 of 840 row groups</td><td class="">122 MB</td></tr></tbody></table></div>
+<h2 id="lbs">Sequences per micro-batch</h2><p class="note">The model is calibrated on 8 micro-batches per step; with 4 sequences per GPU a step has 4 larger ones, so treat these as rough.</p><div class="panel"><table><thead><tr><th class="text">Dataset · sequences per GPU · truncation</th><th class="">Padding</th><th class="">Tokens / micro-batch</th><th class="">Largest micro-batch</th><th class="">EP imbalance</th><th class="">Saving</th><th class="">Saving %</th></tr></thead><tbody><tr><td class="text">Tulu-3 (baseline) · 2 per GPU · 4,096</td><td class="">33.2%</td><td class="">2,062</td><td class="">8,190</td><td class="">1.60× → 1.40×</td><td class="">0.07 s</td><td class="">1.6%</td></tr><tr><td class="text">Tulu-3 (baseline) · 4 per GPU · 4,096</td><td class="">52.6%</td><td class="">5,814</td><td class="">16,380</td><td class="">1.95× → 1.62×</td><td class="">0.17 s</td><td class="">3.2%</td></tr><tr><td class="text">Tulu-3 (baseline) · 2 per GPU · 8,192</td><td class="">34.5%</td><td class="">2,242</td><td class="">16,382</td><td class="">1.62× → 1.41×</td><td class="">0.08 s</td><td class="">1.8%</td></tr><tr><td class="text">Tulu-3 (baseline) · 4 per GPU · 8,192</td><td class="">55.0%</td><td class="">6,527</td><td class="">32,764</td><td class="">1.98× → 1.64×</td><td class="">0.19 s</td><td class="">3.6%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 2 per GPU · 4,096</td><td class="">23.9%</td><td class="">6,498</td><td class="">8,190</td><td class="">1.45× → 1.31×</td><td class="">0.17 s</td><td class="">2.4%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 4 per GPU · 4,096</td><td class="">35.3%</td><td class="">15,278</td><td class="">16,380</td><td class="">1.65× → 1.43×</td><td class="">0.29 s</td><td class="">3.8%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 2 per GPU · 8,192</td><td class="">30.1%</td><td class="">9,491</td><td class="">16,382</td><td class="">1.56× → 1.37×</td><td class="">0.31 s</td><td class="">3.6%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 4 per GPU · 8,192</td><td class="">46.7%</td><td class="">24,897</td><td class="">32,764</td><td class="">1.86× → 1.56×</td><td class="">0.63 s</td><td class="">5.8%</td></tr><tr><td class="text">Mixture-of-Thoughts · 2 per GPU · 4,096</td><td class="">20.6%</td><td class="">7,165</td><td class="">8,190</td><td class="">1.40× → 1.27×</td><td class="">0.16 s</td><td class="">2.2%</td></tr><tr><td class="text">Mixture-of-Thoughts · 4 per GPU · 4,096</td><td class="">28.7%</td><td class="">15,956</td><td class="">16,380</td><td class="">1.54× → 1.36×</td><td class="">0.25 s</td><td class="">3.2%</td></tr><tr><td class="text">Mixture-of-Thoughts · 2 per GPU · 8,192</td><td class="">28.0%</td><td class="">11,645</td><td class="">16,382</td><td class="">1.52× → 1.35×</td><td class="">0.35 s</td><td class="">3.6%</td></tr><tr><td class="text">Mixture-of-Thoughts · 4 per GPU · 8,192</td><td class="">41.9%</td><td class="">28,892</td><td class="">32,764</td><td class="">1.77× → 1.51×</td><td class="">0.66 s</td><td class="">5.5%</td></tr><tr><td class="text">WildChat-1M · 2 per GPU · 4,096</td><td class="">31.8%</td><td class="">3,472</td><td class="">8,190</td><td class="">1.58× → 1.39×</td><td class="">0.12 s</td><td class="">2.3%</td></tr><tr><td class="text">WildChat-1M · 4 per GPU · 4,096</td><td class="">50.3%</td><td class="">9,534</td><td class="">16,380</td><td class="">1.92× → 1.60×</td><td class="">0.26 s</td><td class="">4.1%</td></tr><tr><td class="text">WildChat-1M · 2 per GPU · 8,192</td><td class="">33.7%</td><td class="">3,895</td><td class="">16,382</td><td class="">1.61× → 1.40×</td><td class="">0.14 s</td><td class="">2.6%</td></tr><tr><td class="text">WildChat-1M · 4 per GPU · 8,192</td><td class="">53.8%</td><td class="">11,183</td><td class="">32,764</td><td class="">1.97× → 1.64×</td><td class="">0.33 s</td><td class="">4.7%</td></tr></tbody></table></div>
+<h2 id="model">Model and calibration</h2><p class="note">Per dispatch (one micro-batch index on all 8 GPUs) with pad fraction <i>f</i>, the busiest GPU in MoE layer <i>l</i> gets <i>I<sub>l</sub></i> = 8 · max<sub>g</sub>[(1 − <i>f</i>) · real<sub>lg</sub> + <i>f</i> · pad<sub>lg</sub>] times the mean load, with real<sub>lg</sub> / pad<sub>lg</sub> the measured shares of real-token / pad-token assignments per GPU (Tulu-3 real tokens; <code>&lt;|im_end|&gt;</code> or random pads). Step time = A + B·N + K·Σ<sub>dispatch, layer</sub> (6/8)·T·(<i>I</i> − 1), with N padded tokens per step and T per dispatch. Fit: K = 1.56e-07 s per extra expert assignment on the busiest GPU (from the three pad-fixed8192 runs), A = 3.33 s, B = 7.26 µs per token (with the warm pad-batchmax runs). The sampler replay reproduces derisk-v1's recorded micro-batch shapes exactly. Real-token routing of other datasets may differ from Tulu-3's, but at these pad fractions the pad hot spot dominates: tripling the real-token skew changes the imbalance removed by random pads by under 0.02.</p><div class="panel"><table><thead><tr><th class="text">derisk run</th><th class="">Padded tokens / step</th><th class="">EP imbalance</th><th class="">Step time, measured</th><th class="">Fitted</th></tr></thead><tbody><tr><td class="text">fixed8192/baseline</td><td class="">1,048,576</td><td class="">2.78×</td><td class="">15.98 ± 0.05 s</td><td class="">15.96 s</td></tr><tr><td class="text">fixed8192/random</td><td class="">1,048,576</td><td class="">2.10×</td><td class="">14.02 ± 0.15 s</td><td class="">14.06 s</td></tr><tr><td class="text">fixed8192/placement</td><td class="">1,048,576</td><td class="">1.38×</td><td class="">12.04 ± 0.09 s</td><td class="">12.02 s</td></tr><tr><td class="text">batchmax_warm/baseline</td><td class="">133,137</td><td class="">1.68×</td><td class="">4.49 ± 0.05 s</td><td class="">4.55 s</td></tr><tr><td class="text">batchmax_warm/random</td><td class="">133,137</td><td class="">1.41×</td><td class="">4.44 ± 0.04 s</td><td class="">4.45 s</td></tr><tr><td class="text">batchmax_warm/placement</td><td class="">133,137</td><td class="">1.12×</td><td class="">4.41 ± 0.04 s</td><td class="">4.35 s</td></tr></tbody></table></div>
+<h3 style="margin-top:18px">Check against the derisk-v2 pad-batchmax variants</h3><div class="panel"><table><thead><tr><th class="text">Variant (Tulu-3, truncation 4,096, warm pass)</th><th class="">Modeled as</th><th class="">Predicted saving</th><th class="">Measured saving</th></tr></thead><tbody><tr><td class="text">v2.1 random pad ids</td><td class="">random</td><td class="">1.6%</td><td class="">1.1% ± 0.4%</td></tr><tr><td class="text">v2.3a natural filler, masked</td><td class="">random</td><td class="">1.6%</td><td class="">0.2% ± 0.3%</td></tr><tr><td class="text">v2.3b natural filler, visible</td><td class="">text-like</td><td class="">3.7%</td><td class="">1.0% ± 0.5%</td></tr></tbody></table><p class="note">Measured: mean per-step difference to the v1 baseline over steps 20–39 ± its standard error (both runs see the same data in the same order, so steps are paired). v2.1 enters the fit; v2.3a/b do not. The model overpredicts at these 2k-token micro-batches, most for text-like pads.</p></div>
+<h2 id="repro">Reproduce</h2><pre>source experiments/derisk-v1/env.sh
+python experiments/choose-datasets-v1/sample_datasets.py --output-dir experiments/choose-datasets-v1/samples
+python experiments/choose-datasets-v1/make_generation_template.py
+python experiments/choose-datasets-v1/test_ep_model.py
+python experiments/choose-datasets-v1/screen.py --workers 64
+python experiments/choose-datasets-v1/make_report.py --output hub/choose-datasets-v1/index.html</pre> and {"charts":{"saving":{"type":"bars","title":"Predicted step-time saving from random pad tokens","subtitle":"2 sequences per GPU, pad to the longest in each micro-batch; mean over 20 random 2,560-sample orders","categories":["4,096","8,192"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[1.6469217275369115,1.8187166867360347]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[2.4165431823368793,3.5622946929532704]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[2.1772042770354556,3.5706482664722747]},{"label":"WildChat-1M","color":"--series-3","values":[2.2551936941362403,2.5615668757136127]}],"x":{"label":"Truncation"},"y":{"label":"Step time saved","fmt":"pct1","tickFmt":"pct0"},"height":250},"cdf":{"type":"line","title":"Token length per sample (untruncated)","subtitle":"Share of samples at or below each length, Nemotron 3 Nano tokenizer and chat template","series":[{"label":"Tulu-3 (baseline)","color":"--deemph","points":[[0,0.0],[128,13.883333333333333],[256,28.81666666666667],[384,43.15],[512,55.51666666666667],[640,63.849999999999994],[768,68.91666666666667],[896,73.55000000000001],[1024,77.91666666666667],[1152,82.33333333333334],[1280,86.23333333333333],[1408,89.3],[1536,91.58333333333334],[1664,92.98333333333333],[1792,94.15],[1920,95.0],[2048,95.55],[2176,95.91666666666666],[2304,96.26666666666667],[2432,96.5],[2560,96.78333333333333],[2688,97.1],[2816,97.26666666666667],[2944,97.36666666666667],[3072,97.55],[3200,97.71666666666667],[3328,97.81666666666666],[3456,97.91666666666666],[3584,97.95],[3712,98.0],[3840,98.03333333333333],[3968,98.15],[4096,98.26666666666667],[4224,98.38333333333334],[4352,98.43333333333332],[4480,98.5],[4608,98.53333333333333],[4736,98.53333333333333],[4864,98.53333333333333],[4992,98.6],[5120,98.65],[5248,98.66666666666667],[5376,98.71666666666667],[5504,98.75],[5632,98.76666666666667],[5760,98.8],[5888,98.85000000000001],[6016,98.9],[6144,98.91666666666666],[6272,98.96666666666667],[6400,99.03333333333333],[6528,99.03333333333333],[6656,99.03333333333333],[6784,99.06666666666666],[6912,99.08333333333333],[7040,99.08333333333333],[7168,99.11666666666666],[7296,99.11666666666666],[7424,99.13333333333333],[7552,99.15],[7680,99.16666666666667],[7808,99.18333333333334],[7936,99.21666666666667],[8064,99.25],[8192,99.25],[8320,99.25],[8448,99.28333333333333],[8576,99.3],[8704,99.31666666666666],[8832,99.31666666666666],[8960,99.35000000000001],[9088,99.38333333333334],[9216,99.4],[9344,99.4],[9472,99.4],[9600,99.4],[9728,99.41666666666666],[9856,99.41666666666666],[9984,99.41666666666666],[10112,99.41666666666666],[10240,99.41666666666666],[10368,99.43333333333332],[10496,99.43333333333332],[10624,99.43333333333332],[10752,99.46666666666667],[10880,99.48333333333333],[11008,99.5],[11136,99.5],[11264,99.51666666666667],[11392,99.51666666666667],[11520,99.51666666666667],[11648,99.53333333333333],[11776,99.55000000000001],[11904,99.55000000000001],[12032,99.55000000000001],[12160,99.55000000000001],[12288,99.58333333333333],[12416,99.58333333333333],[12544,99.58333333333333],[12672,99.6],[12800,99.65],[12928,99.66666666666667],[13056,99.66666666666667],[13184,99.68333333333334],[13312,99.68333333333334],[13440,99.68333333333334],[13568,99.68333333333334],[13696,99.68333333333334],[13824,99.68333333333334],[13952,99.68333333333334],[14080,99.68333333333334],[14208,99.68333333333334],[14336,99.7],[14464,99.7],[14592,99.7],[14720,99.7],[14848,99.71666666666667],[14976,99.71666666666667],[15104,99.71666666666667],[15232,99.71666666666667],[15360,99.71666666666667],[15488,99.71666666666667],[15616,99.71666666666667],[15744,99.71666666666667],[15872,99.71666666666667],[16000,99.71666666666667],[16128,99.73333333333333],[16256,99.73333333333333],[16384,99.75]]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","points":[[0,0.0],[128,0.15],[256,1.0999999999999999],[384,3.05],[512,5.816666666666666],[640,9.583333333333334],[768,13.616666666666665],[896,17.566666666666666],[1024,20.9],[1152,24.866666666666667],[1280,28.26666666666667],[1408,31.766666666666666],[1536,35.083333333333336],[1664,38.3],[1792,41.266666666666666],[1920,43.38333333333333],[2048,45.53333333333333],[2176,47.66666666666667],[2304,49.28333333333333],[2432,51.06666666666667],[2560,52.983333333333334],[2688,54.86666666666666],[2816,56.233333333333334],[2944,57.833333333333336],[3072,59.08333333333333],[3200,60.23333333333334],[3328,61.483333333333334],[3456,62.76666666666667],[3584,64.06666666666668],[3712,65.23333333333333],[3840,66.36666666666666],[3968,67.33333333333333],[4096,68.26666666666667],[4224,69.03333333333333],[4352,69.78333333333333],[4480,70.78333333333333],[4608,71.63333333333334],[4736,72.26666666666667],[4864,72.89999999999999],[4992,73.91666666666666],[5120,74.55000000000001],[5248,75.21666666666667],[5376,75.94999999999999],[5504,76.55],[5632,77.26666666666667],[5760,78.05],[5888,78.7],[6016,79.38333333333333],[6144,80.0],[6272,80.65],[6400,81.26666666666667],[6528,81.78333333333333],[6656,82.26666666666667],[6784,82.71666666666667],[6912,83.2],[7040,83.8],[7168,84.3],[7296,84.91666666666666],[7424,85.51666666666667],[7552,85.91666666666666],[7680,86.48333333333333],[7808,86.86666666666667],[7936,87.28333333333333],[8064,87.68333333333334],[8192,88.13333333333333],[8320,88.5],[8448,88.8],[8576,89.13333333333333],[8704,89.5],[8832,89.75],[8960,90.13333333333333],[9088,90.45],[9216,90.83333333333333],[9344,91.2],[9472,91.53333333333333],[9600,91.73333333333333],[9728,91.93333333333334],[9856,92.23333333333333],[9984,92.51666666666667],[10112,92.76666666666667],[10240,93.0],[10368,93.28333333333333],[10496,93.41666666666667],[10624,93.60000000000001],[10752,93.73333333333333],[10880,93.96666666666667],[11008,94.11666666666667],[11136,94.31666666666668],[11264,94.5],[11392,94.71666666666667],[11520,95.03333333333333],[11648,95.19999999999999],[11776,95.35],[11904,95.51666666666667],[12032,95.7],[12160,95.86666666666666],[12288,96.01666666666667],[12416,96.11666666666666],[12544,96.23333333333333],[12672,96.35000000000001],[12800,96.43333333333334],[12928,96.6],[13056,96.73333333333333],[13184,96.81666666666666],[13312,96.88333333333333],[13440,97.0],[13568,97.1],[13696,97.13333333333334],[13824,97.23333333333333],[13952,97.36666666666667],[14080,97.45],[14208,97.55],[14336,97.58333333333333],[14464,97.65],[14592,97.76666666666667],[14720,97.83333333333334],[14848,97.89999999999999],[14976,98.01666666666667],[15104,98.13333333333333],[15232,98.16666666666667],[15360,98.23333333333333],[15488,98.33333333333333],[15616,98.4],[15744,98.53333333333333],[15872,98.58333333333333],[16000,98.63333333333333],[16128,98.66666666666667],[16256,98.71666666666667],[16384,98.73333333333333]]},{"label":"Mixture-of-Thoughts","color":"--series-2","points":[[0,0.0],[128,0.0],[256,0.0],[384,0.08333333333333334],[512,1.0666666666666667],[640,3.4000000000000004],[768,7.6],[896,11.783333333333333],[1024,15.883333333333333],[1152,19.1],[1280,21.916666666666668],[1408,24.666666666666668],[1536,26.78333333333333],[1664,28.9],[1792,30.966666666666665],[1920,32.666666666666664],[2048,34.43333333333333],[2176,36.13333333333333],[2304,37.666666666666664],[2432,39.46666666666667],[2560,40.91666666666667],[2688,42.31666666666667],[2816,43.63333333333333],[2944,44.83333333333333],[3072,46.11666666666667],[3200,47.333333333333336],[3328,48.56666666666667],[3456,49.61666666666667],[3584,50.76666666666667],[3712,51.68333333333334],[3840,52.900000000000006],[3968,53.7],[4096,54.68333333333333],[4224,55.7],[4352,56.8],[4480,57.4],[4608,58.333333333333336],[4736,59.38333333333333],[4864,60.199999999999996],[4992,61.150000000000006],[5120,61.85000000000001],[5248,62.71666666666667],[5376,63.483333333333334],[5504,64.14999999999999],[5632,64.91666666666667],[5760,65.64999999999999],[5888,66.41666666666667],[6016,67.08333333333333],[6144,67.56666666666666],[6272,68.43333333333334],[6400,68.98333333333333],[6528,69.48333333333333],[6656,70.01666666666667],[6784,70.68333333333334],[6912,71.2],[7040,71.83333333333334],[7168,72.35000000000001],[7296,72.8],[7424,73.13333333333333],[7552,73.66666666666667],[7680,74.23333333333333],[7808,74.9],[7936,75.41666666666667],[8064,75.8],[8192,76.35],[8320,76.81666666666666],[8448,77.10000000000001],[8576,77.4],[8704,77.83333333333333],[8832,77.98333333333333],[8960,78.23333333333333],[9088,78.63333333333333],[9216,78.96666666666667],[9344,79.28333333333333],[9472,79.55],[9600,79.78333333333333],[9728,80.08333333333333],[9856,80.23333333333333],[9984,80.56666666666666],[10112,80.78333333333333],[10240,80.93333333333334],[10368,81.2],[10496,81.41666666666667],[10624,81.75],[10752,82.05],[10880,82.21666666666667],[11008,82.48333333333333],[11136,82.76666666666667],[11264,83.08333333333333],[11392,83.36666666666666],[11520,83.55],[11648,83.81666666666666],[11776,84.06666666666666],[11904,84.28333333333333],[12032,84.51666666666667],[12160,84.75],[12288,84.85000000000001],[12416,84.98333333333333],[12544,85.16666666666667],[12672,85.48333333333333],[12800,85.65],[12928,85.76666666666667],[13056,85.91666666666666],[13184,86.18333333333334],[13312,86.36666666666667],[13440,86.56666666666666],[13568,86.78333333333333],[13696,86.93333333333332],[13824,87.18333333333334],[13952,87.4],[14080,87.66666666666667],[14208,87.78333333333333],[14336,87.91666666666667],[14464,88.16666666666667],[14592,88.3],[14720,88.41666666666667],[14848,88.63333333333333],[14976,88.94999999999999],[15104,89.21666666666667],[15232,89.41666666666667],[15360,89.60000000000001],[15488,89.78333333333333],[15616,89.93333333333334],[15744,90.11666666666667],[15872,90.4],[16000,90.60000000000001],[16128,90.75],[16256,90.95],[16384,91.18333333333334]]},{"label":"WildChat-1M","color":"--series-3","points":[[0,0.0],[128,7.966666666666667],[256,14.916666666666668],[384,22.833333333333332],[512,31.233333333333334],[640,38.6],[768,45.6],[896,51.21666666666667],[1024,56.25],[1152,61.0],[1280,67.91666666666667],[1408,73.08333333333333],[1536,76.25],[1664,78.75],[1792,81.0],[1920,82.51666666666667],[2048,83.65],[2176,85.01666666666667],[2304,86.01666666666667],[2432,86.98333333333333],[2560,87.76666666666667],[2688,88.66666666666667],[2816,89.4],[2944,90.14999999999999],[3072,90.63333333333333],[3200,91.10000000000001],[3328,91.66666666666666],[3456,92.30000000000001],[3584,93.01666666666667],[3712,93.56666666666666],[3840,93.95],[3968,94.35],[4096,94.6],[4224,95.35],[4352,95.95],[4480,96.28333333333333],[4608,96.51666666666667],[4736,96.73333333333333],[4864,96.75],[4992,96.83333333333334],[5120,96.88333333333333],[5248,96.98333333333333],[5376,97.06666666666666],[5504,97.21666666666667],[5632,97.31666666666666],[5760,97.36666666666667],[5888,97.43333333333334],[6016,97.56666666666666],[6144,97.63333333333334],[6272,97.68333333333334],[6400,97.71666666666667],[6528,97.73333333333333],[6656,97.83333333333334],[6784,97.96666666666667],[6912,97.98333333333333],[7040,98.05],[7168,98.06666666666666],[7296,98.06666666666666],[7424,98.13333333333333],[7552,98.2],[7680,98.25],[7808,98.28333333333333],[7936,98.33333333333333],[8064,98.33333333333333],[8192,98.36666666666667],[8320,98.4],[8448,98.45],[8576,98.48333333333333],[8704,98.48333333333333],[8832,98.55000000000001],[8960,98.55000000000001],[9088,98.55000000000001],[9216,98.61666666666666],[9344,98.65],[9472,98.65],[9600,98.66666666666667],[9728,98.73333333333333],[9856,98.75],[9984,98.75],[10112,98.76666666666667],[10240,98.76666666666667],[10368,98.78333333333333],[10496,98.78333333333333],[10624,98.8],[10752,98.81666666666666],[10880,98.83333333333333],[11008,98.85000000000001],[11136,98.9],[11264,98.91666666666666],[11392,98.95],[11520,99.0],[11648,99.01666666666667],[11776,99.06666666666666],[11904,99.06666666666666],[12032,99.08333333333333],[12160,99.08333333333333],[12288,99.1],[12416,99.11666666666666],[12544,99.11666666666666],[12672,99.11666666666666],[12800,99.15],[12928,99.16666666666667],[13056,99.18333333333334],[13184,99.18333333333334],[13312,99.18333333333334],[13440,99.2],[13568,99.2],[13696,99.26666666666667],[13824,99.26666666666667],[13952,99.28333333333333],[14080,99.3],[14208,99.31666666666666],[14336,99.31666666666666],[14464,99.33333333333333],[14592,99.33333333333333],[14720,99.35000000000001],[14848,99.35000000000001],[14976,99.35000000000001],[15104,99.35000000000001],[15232,99.38333333333334],[15360,99.38333333333334],[15488,99.38333333333334],[15616,99.38333333333334],[15744,99.38333333333334],[15872,99.4],[16000,99.4],[16128,99.4],[16256,99.4],[16384,99.4]]}],"x":{"label":"Tokens","fmt":"compact"},"y":{"label":"Samples at or below","fmt":"pct1","tickFmt":"pct0","min":0,"max":100},"shade":[8192,16384],"shadeLabel":"cut at 8,192","height":280},"padshare":{"type":"bars","title":"Padding share of the tokens","subtitle":"2 sequences per GPU","categories":["4,096","8,192"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[33.20071043489586,34.50579791988066]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[23.93591979067767,30.141024800851085]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[20.567886741436205,27.960003504055102]},{"label":"WildChat-1M","color":"--series-3","values":[31.80860077694901,33.69574952503899]}],"x":{"label":"Truncation"},"y":{"label":"Pad tokens / all tokens","fmt":"pct1","tickFmt":"pct0"},"height":250},"tokens":{"type":"bars","title":"Tokens per micro-batch per GPU","subtitle":"2 sequences per GPU, padding included","categories":["4,096","8,192"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[2061.526640625,2241.701953125]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[6498.238359375,9490.913828125]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[7164.5453906249995,11645.4475]},{"label":"WildChat-1M","color":"--series-3","values":[3471.9896093750003,3894.7285937499996]}],"x":{"label":"Truncation"},"y":{"label":"Tokens","fmt":"compact","tickFmt":"compact"},"height":250},"imbalance":{"type":"bars","title":"Predicted EP imbalance","subtitle":"Busiest GPU \u00f7 mean, averaged over dispatches and MoE layers; truncation 8,192, 2 sequences per GPU","categories":["<|im_end|>","random ids"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[1.6151813608397105,1.4064158378861953]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[1.558819475218845,1.3711178467847964]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[1.5225575575230077,1.3486039431984507]},{"label":"WildChat-1M","color":"--series-3","values":[1.6083503643658996,1.4020615540142374]}],"x":{"label":"Pad token"},"y":{"label":"Busiest \u00f7 mean","fmt":"x2","tickFmt":"x1"},"height":250},"lbs":{"type":"bars","title":"Predicted saving with 2 vs 4 sequences per GPU","subtitle":"4 per GPU at 8,192 allows 32,768-token micro-batches, which ran out of memory in derisk-v1","categories":["2 \u00b7 4,096","4 \u00b7 4,096","2 \u00b7 8,192","4 \u00b7 8,192"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[1.6469217275369115,3.2169571191022777,1.8187166867360347,3.593477758195234]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[2.4165431823368793,3.7877566474201476,3.5622946929532704,5.788892738622122]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[2.1772042770354556,3.1608579622169017,3.5706482664722747,5.523656315039786]},{"label":"WildChat-1M","color":"--series-3","values":[2.2551936941362403,4.141891160463877,2.5615668757136127,4.747962632662335]}],"x":{"label":"Sequences per GPU \u00b7 truncation"},"y":{"label":"Step time saved","fmt":"pct1","tickFmt":"pct0"},"height":250}}}; charts render from the payload. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>choose-datasets-v1: where do random pad tokens pay off?</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --text-1: #0b0b0b; --text-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11, 11, 11, 0.10); --shade: rgba(137, 135, 129, 0.12);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --accent: #4a3aa7; --deemph: #898781; --good: #006300; --critical: #d03b3b;
+  --seq-0: #cde2fb; --seq-1: #b7d3f6; --seq-2: #9ec5f4; --seq-3: #86b6ef; --seq-4: #6da7ec; --seq-5: #5598e7;
+  --seq-6: #3987e5; --seq-7: #2a78d6; --seq-8: #256abf; --seq-9: #1c5cab; --seq-10: #184f95; --seq-11: #104281;
+  --seq-12: #0d366b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --baseline: #383835; --border: rgba(255, 255, 255, 0.10); --shade: rgba(137, 135, 129, 0.16);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --accent: #9085e9; --deemph: #898781; --good: #0ca30c; --critical: #d03b3b;
+    --seq-0: #0d366b; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #2a78d6;
+    --seq-6: #3987e5; --seq-7: #5598e7; --seq-8: #6da7ec; --seq-9: #86b6ef; --seq-10: #9ec5f4; --seq-11: #b7d3f6;
+    --seq-12: #cde2fb;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --baseline: #383835; --border: rgba(255, 255, 255, 0.10); --shade: rgba(137, 135, 129, 0.16);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --accent: #9085e9; --deemph: #898781; --good: #0ca30c; --critical: #d03b3b;
+  --seq-0: #0d366b; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #2a78d6;
+  --seq-6: #3987e5; --seq-7: #5598e7; --seq-8: #6da7ec; --seq-9: #86b6ef; --seq-10: #9ec5f4; --seq-11: #b7d3f6;
+  --seq-12: #cde2fb;
+}
+* { box-sizing: border-box; }
+html { background: var(--page); }
+body {
+  margin: 0; color: var(--text-1); background: var(--page);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+header.page { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 8px; }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 6px; font-weight: 650; }
+h2 { font-size: 19px; margin: 40px 0 10px; font-weight: 650; }
+h3 { font-size: 15px; margin: 0; font-weight: 600; }
+p, li { color: var(--text-1); }
+.meta { color: var(--text-2); font-size: 13px; }
+.meta a, a { color: var(--series-1); }
+.lede { color: var(--text-2); max-width: 900px; }
+nav.toc { margin: 16px 0 8px; font-size: 13px; color: var(--text-2); }
+nav.toc a { margin-right: 14px; }
+button {
+  font: inherit; font-size: 13px; color: var(--text-2); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+button:hover { color: var(--text-1); }
+button:focus-visible, .plot:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.findings { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 22px; }
+.findings li { margin: 6px 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+.tile .label { color: var(--text-2); font-size: 13px; }
+.tile .row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.tile .key { width: 10px; height: 10px; border-radius: 2px; flex: none; align-self: center; }
+.tile .arm { color: var(--text-2); font-size: 12px; min-width: 104px; }
+.tile .value { font-size: 20px; font-weight: 600; white-space: nowrap; }
+.tile .sub { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tile .delta { color: var(--text-2); font-size: 12px; margin-top: 6px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+figure.card { margin: 14px 0 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px 10px; }
+.card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.card-head .subtitle { color: var(--text-2); font-size: 13px; margin: 2px 0 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 2px; font-size: 13px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; }
+.legend i.line { width: 16px; height: 2px; border-radius: 1px; }
+.legend i.rect { width: 10px; height: 10px; border-radius: 2px; }
+.plot { position: relative; margin-top: 6px; }
+.plot svg { display: block; overflow: visible; }
+.plot text { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.plot text.label { fill: var(--text-2); font-size: 12px; }
+.tooltip {
+  position: absolute; pointer-events: none; background: var(--surface); color: var(--text-1);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); white-space: nowrap; z-index: 5; display: none;
+}
+.tooltip .t-head { color: var(--text-2); margin-bottom: 4px; }
+.tooltip .t-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+.tooltip .t-row i { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+.tooltip .t-row b { font-weight: 600; min-width: 56px; }
+.tooltip .t-row span { color: var(--text-2); }
+.table-wrap { max-height: 420px; overflow: auto; margin-top: 8px; }
+table { border-collapse: collapse; font-size: 13px; width: 100%; }
+th, td { text-align: right; padding: 5px 9px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+th { color: var(--text-2); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+th:first-child, td:first-child, th.text, td.text { text-align: left; }
+table.kv td:first-child { color: var(--text-2); width: 32%; }
+table.kv td { text-align: left; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px 10px; margin-top: 12px; }
+.scale { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.scale .ramp { display: flex; }
+.scale .ramp i { width: 18px; height: 10px; display: inline-block; }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
+pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.note { color: var(--text-2); font-size: 13px; }
+.callout { border-left: 3px solid var(--baseline); padding: 2px 12px; color: var(--text-2); }
+</style>
+</head>
+<body>
+<main>
+<header class="page"><div><h1>Choosing a dataset where random pad tokens pay off (choose-datasets-v1)</h1><div class="meta">Generated 2026-09-26 23:21 UTC · phase 1: CPU screen, no GPU runs · Nemotron 3 Nano 30B-A3B SFT, 8× H100, FSDP2 + EP=8 · follows <a href="../derisk-v2/index.html">derisk-v2</a></div></div><button type="button" id="theme-toggle">Theme: auto</button></header>
+<p class="lede">derisk-v2 showed that filling padding with random token ids instead of <code>&lt;|im_end|&gt;</code> cuts step time by 12% when every micro-batch is padded to 8,192 tokens, but by about 1% when each micro-batch is padded only to its longest sequence (batchmax) on Tulu-3. This screen asks which natural SFT dataset would make the batchmax gain largest. Each candidate is sampled from the Hub, tokenized exactly as the recipe does, and run through derisk's data order; a model calibrated on the derisk-v1/v2 routing counts and step times then predicts EP imbalance and step time with <code>&lt;|im_end|&gt;</code> pads and with random pads. No GPU runs yet: the top candidates go to a short A/B once approved.</p>
+<h2 id="findings">Findings</h2><div class="findings"><ul><li><b>Mixture-of-Thoughts</b> at truncation 8,192: padding 28.0%, 11,645 tokens per micro-batch, EP imbalance 1.52× → 1.35× with random pads, predicted step time 9.80 s → 9.45 s (<b>−3.6%</b>, 0.35 s).</li><li><b>Nemotron IF-Chat-v1</b> at truncation 8,192: padding 30.1%, 9,491 tokens per micro-batch, EP imbalance 1.56× → 1.37× with random pads, predicted step time 8.66 s → 8.35 s (<b>−3.6%</b>, 0.31 s).</li><li><b>WildChat-1M</b> at truncation 8,192: padding 33.7%, 3,895 tokens per micro-batch, EP imbalance 1.61× → 1.40× with random pads, predicted step time 5.56 s → 5.42 s (<b>−2.6%</b>, 0.14 s).</li><li><b>Tulu-3 baseline</b>: 1.8% predicted at 8,192; at derisk's 4,096 1.6% predicted vs 1.1% measured in derisk-v2 (warm pass).</li></ul></div>
+<h2 id="interpretation">Interpretation</h2><div class="panel"><h3>Short answer</h3>
+<p>Two candidates tie. <b>Nemotron IF-Chat-v1</b> and <b>Mixture-of-Thoughts</b> are both predicted to cut step time by
+<b>3.6%</b> with random pad tokens at truncation 8,192 and 2 sequences per GPU (0.31 s and 0.35 s per step). That is
+twice Tulu-3's 1.8% at the same truncation; at derisk's 4,096, Tulu-3 is 1.6% predicted and 1.1% measured. WildChat-1M
+comes third at 2.6%.</p>
+<p><b>Proposed pick: Nemotron IF-Chat-v1</b>, with Mixture-of-Thoughts as the second A/B arm. IF-Chat ties on the
+predicted gain, is Nemotron 3 Nano's own SFT data, and loses less to truncation at 8,192: 12% of samples are cut,
+against 24% of Mixture-of-Thoughts (mostly its Codeforces traces, which average 13k tokens).</p>
+
+<h3>Why the dataset with the highest EP imbalance does not win</h3>
+<ul>
+<li>With <code>&lt;|im_end|&gt;</code> pads, Tulu-3 (1.62×) and WildChat (1.61×) have the highest EP imbalance.
+Their heavy-tailed lengths give them the most padding, about 34%. But their micro-batches are small (2.2k and 3.9k
+tokens per GPU), so the expert work that the imbalance stretches is a small part of each step.</li>
+<li>IF-Chat and Mixture-of-Thoughts pad less (30% and 28%) but put 9.5k–11.6k tokens in each micro-batch. Each point
+of imbalance therefore costs them three to four times more time.</li>
+<li>With 2 sequences per GPU, the padding share cannot exceed 50% whatever the dataset, and all four land at 28–35%.
+What a dataset really changes is micro-batch size. Even the best natural dataset stays far below derisk-v2's 12% at
+fixed 8,192 padding, where 91% of tokens were pads.</li>
+</ul>
+
+<h3>Things the screen turned up</h3>
+<ul>
+<li><b>IF-Chat's long samples are its reasoning-off chats</b> (64% of rows, median 3,778 tokens, multi-turn), not
+its reasoning-on rows (median 1,306). The Nano chat template keeps only the final assistant turn's reasoning, and
+reasoning-on rows are mostly short instruction-following prompts.</li>
+<li><b>IF-Chat does not load in <code>ChatDataset</code> with Nano's stock chat template.</b> About a third of rows
+are multi-turn with reasoning, and they fail the answer-only loss mask because the template rewrites earlier turns
+(it drops their <code>&lt;think&gt;</code>). A copy of the template with <code>{% generation %}</code> markers
+(<code>templates/nano3_generation.jinja</code>) fixes this:
+<ul>
+<li>On 900 checked conversations it renders identical text.</li>
+<li>On the 797 conversations the stock path can mask, it produces identical loss masks.</li>
+</ul>
+The IF-Chat A/B would use it.</li>
+<li><b><code>ChatDataset</code>'s JSONL reader splits files with <code>str.splitlines()</code></b>, which also
+breaks on U+2028, U+2029 and U+0085 inside JSON strings. 32 of the 6,000 WildChat rows contain them, so JSONL written
+with raw Unicode fails to load. The samples here are written with ASCII escapes. The reader itself is an AutoModel
+bug and is left for a separate fix.</li>
+<li><code>nvidia/Nemotron-Post-Training-Dataset-v2</code>, the mix used by AutoModel's Nano-30B example, was not
+screened. It is gated, and this HF account has not accepted its terms.</li>
+</ul>
+
+<h3>How far to trust the predictions</h3>
+<ul>
+<li>The model is calibrated on six derisk runs, all on Tulu-3, and it overpredicts where micro-batches are small.
+Against the derisk-v2 batchmax runs (Tulu-3 at 4,096, about 2k tokens per micro-batch, per-step paired
+differences):
+<ul>
+<li>Random pads: 1.6% predicted vs 1.1% ± 0.4% measured.</li>
+<li>Masked natural filler: 1.6% predicted vs 0.2% ± 0.3%.</li>
+<li>Visible natural filler: 3.7% predicted vs 1.0% ± 0.5%.</li>
+</ul>
+IF-Chat's and Mixture-of-Thoughts' micro-batches are 4–5× larger. That is closer to the fixed-8,192 runs, where the
+model fits within 0.04 s, but expect their realized saving to fall somewhat below 3.6%. The small-batch bias also
+means the gap to WildChat and Tulu-3 is, if anything, larger than shown.</li>
+<li>The savings assume warm shape caches, as in derisk-v2's second pass. In a first pass, every new sequence length
+costs about 1 s of cuDNN plan building (derisk-v1), which dilutes the gain.</li>
+<li>WildChat's files are ordered by time. Its sample over-represents GPT-4 conversations, which run longer (15% vs
+12% for <code>gpt-4-1106-preview</code>), so its prediction is slightly optimistic. The other two samples match
+their splits to within 0.3 points.</li>
+</ul>
+
+<h3>Bigger levers than the dataset</h3>
+<ul>
+<li><b>Pads the router sees in context.</b> derisk-v2.3b's visible natural filler routed like real text (1.15×
+imbalance at fixed 8,192). Modeled that way, it would save 7.9% on IF-Chat and 7.8% on Mixture-of-Thoughts at
+8,192. That is an upper bound: at Tulu's small micro-batches the same model predicted 3.7% and 1.0% was
+measured.</li>
+<li><b>4 sequences per GPU at truncation 4,096.</b> The largest micro-batch is then 16k tokens, the same size that
+fit in derisk. Predicted savings: 3.2% on Tulu-3 and 3.8–4.1% on IF-Chat and WildChat. At 8,192, 4 per GPU predicts
+5.5–5.8% on IF-Chat and Mixture-of-Thoughts, but allows 32k-token micro-batches, which ran out of memory in
+derisk-v1.</li>
+<li><b>Keeping pads out of the experts.</b> DeepEP already skips tokens routed to index −1. Doing this would remove
+the hot spot and the wasted expert work outright, rather than spreading them.</li>
+</ul>
+
+<h3>Proposed next step (phase 2, not run)</h3>
+<p>A/B on IF-Chat and Mixture-of-Thoughts at truncation 8,192 with 2 sequences per GPU: <code>&lt;|im_end|&gt;</code>
+pads vs random pads, two passes of 20 steps each (derisk-v2's protocol), run one after another. That is 4 runs, about
+an hour of GPU time.</p>
+<p>Compare the arms step by step. Both arms see identical data in identical order, so pairing cuts the standard error
+3–5× (0.015–0.020 s instead of about 0.06 s on derisk's batchmax runs). A 3% effect on a roughly 9 s step is then
+many standard errors from zero.</p>
+</div>
+<h2 id="ranking">Ranking</h2><div data-chart="saving"></div><div class="grid2"><div data-chart="padshare"></div><div data-chart="tokens"></div></div><div class="grid2"><div data-chart="imbalance"></div><div data-chart="lbs"></div></div>
+<div class="panel"><table><thead><tr><th class="text">Dataset · truncation</th><th class="">Padding</th><th class="">Tokens / micro-batch</th><th class="">Pad tokens / micro-batch</th><th class="">EP imbalance, &lt;|im_end|&gt; → random</th><th class="">Step time, &lt;|im_end|&gt;</th><th class="">Saving</th><th class="">Saving %</th><th class="">Effective-MFU gain</th><th class="">Saving, text-like pads</th></tr></thead><tbody><tr><td class="text">Tulu-3 (baseline) · 8,192</td><td class="">34.5%</td><td class="">2,242</td><td class="">774</td><td class="">1.62× → 1.41×</td><td class="">4.62 s</td><td class="">0.08 s<br><span class="note" style="white-space:nowrap">0.08–0.09</span></td><td class="">1.8%<br><span class="note" style="white-space:nowrap">1.7–1.9</span></td><td class="">1.9%</td><td class="">4.1%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 8,192</td><td class="">30.1%</td><td class="">9,491</td><td class="">2,861</td><td class="">1.56× → 1.37×</td><td class="">8.66 s</td><td class="">0.31 s<br><span class="note" style="white-space:nowrap">0.30–0.32</span></td><td class="">3.6%<br><span class="note" style="white-space:nowrap">3.5–3.6</span></td><td class="">3.7%</td><td class="">7.9%</td></tr><tr><td class="text">Mixture-of-Thoughts · 8,192</td><td class="">28.0%</td><td class="">11,645</td><td class="">3,256</td><td class="">1.52× → 1.35×</td><td class="">9.80 s</td><td class="">0.35 s<br><span class="note" style="white-space:nowrap">0.34–0.36</span></td><td class="">3.6%<br><span class="note" style="white-space:nowrap">3.5–3.6</span></td><td class="">3.7%</td><td class="">7.8%</td></tr><tr><td class="text">WildChat-1M · 8,192</td><td class="">33.7%</td><td class="">3,895</td><td class="">1,312</td><td class="">1.61× → 1.40×</td><td class="">5.56 s</td><td class="">0.14 s<br><span class="note" style="white-space:nowrap">0.14–0.15</span></td><td class="">2.6%<br><span class="note" style="white-space:nowrap">2.5–2.6</span></td><td class="">2.6%</td><td class="">5.8%</td></tr><tr><td class="text">Tulu-3 (baseline) · 4,096</td><td class="">33.2%</td><td class="">2,062</td><td class="">685</td><td class="">1.60× → 1.40×</td><td class="">4.51 s</td><td class="">0.07 s<br><span class="note" style="white-space:nowrap">0.07–0.08</span></td><td class="">1.6%<br><span class="note" style="white-space:nowrap">1.6–1.7</span></td><td class="">1.7%</td><td class="">3.7%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 4,096</td><td class="">23.9%</td><td class="">6,498</td><td class="">1,556</td><td class="">1.45× → 1.31×</td><td class="">6.86 s</td><td class="">0.17 s<br><span class="note" style="white-space:nowrap">0.16–0.17</span></td><td class="">2.4%<br><span class="note" style="white-space:nowrap">2.3–2.5</span></td><td class="">2.5%</td><td class="">5.1%</td></tr><tr><td class="text">Mixture-of-Thoughts · 4,096</td><td class="">20.6%</td><td class="">7,165</td><td class="">1,474</td><td class="">1.40× → 1.27×</td><td class="">7.16 s</td><td class="">0.16 s<br><span class="note" style="white-space:nowrap">0.15–0.16</span></td><td class="">2.2%<br><span class="note" style="white-space:nowrap">2.1–2.2</span></td><td class="">2.2%</td><td class="">4.4%</td></tr><tr><td class="text">WildChat-1M · 4,096</td><td class="">31.8%</td><td class="">3,472</td><td class="">1,104</td><td class="">1.58× → 1.39×</td><td class="">5.30 s</td><td class="">0.12 s<br><span class="note" style="white-space:nowrap">0.12–0.12</span></td><td class="">2.3%<br><span class="note" style="white-space:nowrap">2.2–2.3</span></td><td class="">2.3%</td><td class="">5.0%</td></tr></tbody></table><p class="note">Last column: upper bound if pads route like text (derisk-v2.3b's visible natural filler); see the held-out check below before trusting it. 2 sequences per GPU, 8 GPUs, global batch 128 (derisk's setup). Mean over 20 random 2,560-sample orders (5th–95th percentile below each saving; this is sampling spread, not model error). Tokens are per GPU. Effective-MFU gain = real tokens per second with random pads ÷ with <code>&lt;|im_end|&gt;</code> pads − 1.</p></div>
+<h2 id="lengths">Length distributions</h2><div data-chart="cdf"></div>
+<div class="panel"><table><thead><tr><th class="text">Dataset</th><th class="">Rows in split</th><th class="">Sampled</th><th class="">Mean</th><th class="">Median</th><th class="">p90</th><th class="">p99</th><th class="">Max</th><th class="">Cut at 4,096</th><th class="">Cut at 8,192</th><th class="">Loss tokens @8,192</th><th class="">No loss tokens @8,192</th></tr></thead><tbody><tr><td class="text">Tulu-3 (baseline)</td><td class="">939,343</td><td class="">6,000</td><td class="">795</td><td class="">449</td><td class="">1,447</td><td class="">6,301</td><td class="">45,731</td><td class="">1.7%</td><td class="">0.8%</td><td class="">488</td><td class="">0.15%</td></tr><tr><td class="text">Nemotron IF-Chat-v1</td><td class="">315,457</td><td class="">6,000</td><td class="">3,768</td><td class="">2,356</td><td class="">8,914</td><td class="">17,200</td><td class="">35,060</td><td class="">31.7%</td><td class="">11.9%</td><td class="">2,951</td><td class="">0.00%</td></tr><tr><td class="text">Mixture-of-Thoughts</td><td class="">349,317</td><td class="">6,000</td><td class="">5,818</td><td class="">3,500</td><td class="">15,652</td><td class="">23,966</td><td class="">27,524</td><td class="">45.3%</td><td class="">23.7%</td><td class="">3,909</td><td class="">0.00%</td></tr><tr><td class="text">WildChat-1M</td><td class="">837,989</td><td class="">6,000</td><td class="">1,457</td><td class="">868</td><td class="">2,910</td><td class="">11,505</td><td class="">73,068</td><td class="">5.4%</td><td class="">1.6%</td><td class="">839</td><td class="">0.48%</td></tr></tbody></table><p class="note">Untruncated token counts per sample as <code>ChatDataset</code> renders them. For IF-Chat the Hub parquet export holds 315,457 of the split's 426,009 rows. Every sample tokenized; none rejected.</p></div>
+<h3 style="margin-top:18px">Length by subset</h3><div class="panel"><table><thead><tr><th class="text">Subset</th><th class="">Share</th><th class="">Mean</th><th class="">Median</th><th class="">Mean @8,192</th></tr></thead><tbody><tr><td class="text">Nemotron IF-Chat-v1 · reasoning = off</td><td class="">64%</td><td class="">4,954</td><td class="">3,778</td><td class="">4,251</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · reasoning = on</td><td class="">36%</td><td class="">1,651</td><td class="">1,306</td><td class="">1,648</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · capability_target = chat</td><td class="">79%</td><td class="">4,327</td><td class="">2,982</td><td class="">3,757</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · capability_target = instruction_following</td><td class="">21%</td><td class="">1,643</td><td class="">1,290</td><td class="">1,638</td></tr><tr><td class="text">Mixture-of-Thoughts · source = nvidia/Llama-Nemotron-Post-Training-Dataset</td><td class="">49%</td><td class="">2,203</td><td class="">1,483</td><td class="">2,200</td></tr><tr><td class="text">Mixture-of-Thoughts · source = open-r1/OpenR1-Math-220k</td><td class="">27%</td><td class="">6,023</td><td class="">4,968</td><td class="">5,151</td></tr><tr><td class="text">Mixture-of-Thoughts · source = open-r1/codeforces-cots</td><td class="">24%</td><td class="">12,964</td><td class="">12,881</td><td class="">7,254</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0613</td><td class="">51%</td><td class="">1,080</td><td class="">859</td><td class="">1,080</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0301</td><td class="">17%</td><td class="">1,075</td><td class="">649</td><td class="">1,075</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-1106-preview</td><td class="">15%</td><td class="">2,597</td><td class="">986</td><td class="">1,967</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-0125-preview</td><td class="">7%</td><td class="">3,008</td><td class="">977</td><td class="">2,002</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-0314</td><td class="">5%</td><td class="">1,418</td><td class="">869</td><td class="">1,416</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0125</td><td class="">5%</td><td class="">1,076</td><td class="">1,143</td><td class="">1,019</td></tr></tbody></table></div>
+<h2 id="sampling">Are the samples representative?</h2><p class="note">Rows come from randomly drawn parquet row groups across all files of each split (probability ∝ rows), a random subset of each. The split-wide shares come from reading the small metadata columns of every row.</p><div class="panel"><table><thead><tr><th class="text">Category</th><th class="">Whole split</th><th class="">Sample</th></tr></thead><tbody><tr><td class="text">Nemotron IF-Chat-v1 · reasoning = off</td><td class="">64.2%</td><td class="">64.1%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · reasoning = on</td><td class="">35.8%</td><td class="">35.9%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · capability_target = chat</td><td class="">79.1%</td><td class="">79.2%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · capability_target = instruction_following</td><td class="">20.9%</td><td class="">20.8%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · read</td><td class="">40 of 494 row groups</td><td class="">225 MB</td></tr><tr><td class="text">Mixture-of-Thoughts · source = nvidia/Llama-Nemotron-Post-Training-Dataset</td><td class="">49.4%</td><td class="">49.2%</td></tr><tr><td class="text">Mixture-of-Thoughts · source = open-r1/OpenR1-Math-220k</td><td class="">26.8%</td><td class="">26.7%</td></tr><tr><td class="text">Mixture-of-Thoughts · source = open-r1/codeforces-cots</td><td class="">23.8%</td><td class="">24.1%</td></tr><tr><td class="text">Mixture-of-Thoughts · read</td><td class="">30 of 360 row groups</td><td class="">259 MB</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0613</td><td class="">44.3%</td><td class="">50.8%</td></tr><tr><td class="text">WildChat-1M · model = gpt-3.5-turbo-0301</td><td class="">23.3%</td><td class="">17.4%</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-1106-preview</td><td class="">11.8%</td><td class="">15.0%</td></tr><tr><td class="text">WildChat-1M · model = gpt-4-0125-preview</td><td class="">7.4%</td><td class="">7.0%</td></tr><tr><td class="text">WildChat-1M · language = English</td><td class="">58.5%</td><td class="">57.4%</td></tr><tr><td class="text">WildChat-1M · language = Chinese</td><td class="">14.6%</td><td class="">13.9%</td></tr><tr><td class="text">WildChat-1M · language = Russian</td><td class="">10.7%</td><td class="">10.1%</td></tr><tr><td class="text">WildChat-1M · language = French</td><td class="">3.3%</td><td class="">3.5%</td></tr><tr><td class="text">WildChat-1M · read</td><td class="">40 of 840 row groups</td><td class="">122 MB</td></tr></tbody></table></div>
+<h2 id="lbs">Sequences per micro-batch</h2><p class="note">The model is calibrated on 8 micro-batches per step; with 4 sequences per GPU a step has 4 larger ones, so treat these as rough.</p><div class="panel"><table><thead><tr><th class="text">Dataset · sequences per GPU · truncation</th><th class="">Padding</th><th class="">Tokens / micro-batch</th><th class="">Largest micro-batch</th><th class="">EP imbalance</th><th class="">Saving</th><th class="">Saving %</th></tr></thead><tbody><tr><td class="text">Tulu-3 (baseline) · 2 per GPU · 4,096</td><td class="">33.2%</td><td class="">2,062</td><td class="">8,190</td><td class="">1.60× → 1.40×</td><td class="">0.07 s</td><td class="">1.6%</td></tr><tr><td class="text">Tulu-3 (baseline) · 4 per GPU · 4,096</td><td class="">52.6%</td><td class="">5,814</td><td class="">16,380</td><td class="">1.95× → 1.62×</td><td class="">0.17 s</td><td class="">3.2%</td></tr><tr><td class="text">Tulu-3 (baseline) · 2 per GPU · 8,192</td><td class="">34.5%</td><td class="">2,242</td><td class="">16,382</td><td class="">1.62× → 1.41×</td><td class="">0.08 s</td><td class="">1.8%</td></tr><tr><td class="text">Tulu-3 (baseline) · 4 per GPU · 8,192</td><td class="">55.0%</td><td class="">6,527</td><td class="">32,764</td><td class="">1.98× → 1.64×</td><td class="">0.19 s</td><td class="">3.6%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 2 per GPU · 4,096</td><td class="">23.9%</td><td class="">6,498</td><td class="">8,190</td><td class="">1.45× → 1.31×</td><td class="">0.17 s</td><td class="">2.4%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 4 per GPU · 4,096</td><td class="">35.3%</td><td class="">15,278</td><td class="">16,380</td><td class="">1.65× → 1.43×</td><td class="">0.29 s</td><td class="">3.8%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 2 per GPU · 8,192</td><td class="">30.1%</td><td class="">9,491</td><td class="">16,382</td><td class="">1.56× → 1.37×</td><td class="">0.31 s</td><td class="">3.6%</td></tr><tr><td class="text">Nemotron IF-Chat-v1 · 4 per GPU · 8,192</td><td class="">46.7%</td><td class="">24,897</td><td class="">32,764</td><td class="">1.86× → 1.56×</td><td class="">0.63 s</td><td class="">5.8%</td></tr><tr><td class="text">Mixture-of-Thoughts · 2 per GPU · 4,096</td><td class="">20.6%</td><td class="">7,165</td><td class="">8,190</td><td class="">1.40× → 1.27×</td><td class="">0.16 s</td><td class="">2.2%</td></tr><tr><td class="text">Mixture-of-Thoughts · 4 per GPU · 4,096</td><td class="">28.7%</td><td class="">15,956</td><td class="">16,380</td><td class="">1.54× → 1.36×</td><td class="">0.25 s</td><td class="">3.2%</td></tr><tr><td class="text">Mixture-of-Thoughts · 2 per GPU · 8,192</td><td class="">28.0%</td><td class="">11,645</td><td class="">16,382</td><td class="">1.52× → 1.35×</td><td class="">0.35 s</td><td class="">3.6%</td></tr><tr><td class="text">Mixture-of-Thoughts · 4 per GPU · 8,192</td><td class="">41.9%</td><td class="">28,892</td><td class="">32,764</td><td class="">1.77× → 1.51×</td><td class="">0.66 s</td><td class="">5.5%</td></tr><tr><td class="text">WildChat-1M · 2 per GPU · 4,096</td><td class="">31.8%</td><td class="">3,472</td><td class="">8,190</td><td class="">1.58× → 1.39×</td><td class="">0.12 s</td><td class="">2.3%</td></tr><tr><td class="text">WildChat-1M · 4 per GPU · 4,096</td><td class="">50.3%</td><td class="">9,534</td><td class="">16,380</td><td class="">1.92× → 1.60×</td><td class="">0.26 s</td><td class="">4.1%</td></tr><tr><td class="text">WildChat-1M · 2 per GPU · 8,192</td><td class="">33.7%</td><td class="">3,895</td><td class="">16,382</td><td class="">1.61× → 1.40×</td><td class="">0.14 s</td><td class="">2.6%</td></tr><tr><td class="text">WildChat-1M · 4 per GPU · 8,192</td><td class="">53.8%</td><td class="">11,183</td><td class="">32,764</td><td class="">1.97× → 1.64×</td><td class="">0.33 s</td><td class="">4.7%</td></tr></tbody></table></div>
+<h2 id="model">Model and calibration</h2><p class="note">Per dispatch (one micro-batch index on all 8 GPUs) with pad fraction <i>f</i>, the busiest GPU in MoE layer <i>l</i> gets <i>I<sub>l</sub></i> = 8 · max<sub>g</sub>[(1 − <i>f</i>) · real<sub>lg</sub> + <i>f</i> · pad<sub>lg</sub>] times the mean load, with real<sub>lg</sub> / pad<sub>lg</sub> the measured shares of real-token / pad-token assignments per GPU (Tulu-3 real tokens; <code>&lt;|im_end|&gt;</code> or random pads). Step time = A + B·N + K·Σ<sub>dispatch, layer</sub> (6/8)·T·(<i>I</i> − 1), with N padded tokens per step and T per dispatch. Fit: K = 1.56e-07 s per extra expert assignment on the busiest GPU (from the three pad-fixed8192 runs), A = 3.33 s, B = 7.26 µs per token (with the warm pad-batchmax runs). The sampler replay reproduces derisk-v1's recorded micro-batch shapes exactly. Real-token routing of other datasets may differ from Tulu-3's, but at these pad fractions the pad hot spot dominates: tripling the real-token skew changes the imbalance removed by random pads by under 0.02.</p><div class="panel"><table><thead><tr><th class="text">derisk run</th><th class="">Padded tokens / step</th><th class="">EP imbalance</th><th class="">Step time, measured</th><th class="">Fitted</th></tr></thead><tbody><tr><td class="text">fixed8192/baseline</td><td class="">1,048,576</td><td class="">2.78×</td><td class="">15.98 ± 0.05 s</td><td class="">15.96 s</td></tr><tr><td class="text">fixed8192/random</td><td class="">1,048,576</td><td class="">2.10×</td><td class="">14.02 ± 0.15 s</td><td class="">14.06 s</td></tr><tr><td class="text">fixed8192/placement</td><td class="">1,048,576</td><td class="">1.38×</td><td class="">12.04 ± 0.09 s</td><td class="">12.02 s</td></tr><tr><td class="text">batchmax_warm/baseline</td><td class="">133,137</td><td class="">1.68×</td><td class="">4.49 ± 0.05 s</td><td class="">4.55 s</td></tr><tr><td class="text">batchmax_warm/random</td><td class="">133,137</td><td class="">1.41×</td><td class="">4.44 ± 0.04 s</td><td class="">4.45 s</td></tr><tr><td class="text">batchmax_warm/placement</td><td class="">133,137</td><td class="">1.12×</td><td class="">4.41 ± 0.04 s</td><td class="">4.35 s</td></tr></tbody></table></div>
+<h3 style="margin-top:18px">Check against the derisk-v2 pad-batchmax variants</h3><div class="panel"><table><thead><tr><th class="text">Variant (Tulu-3, truncation 4,096, warm pass)</th><th class="">Modeled as</th><th class="">Predicted saving</th><th class="">Measured saving</th></tr></thead><tbody><tr><td class="text">v2.1 random pad ids</td><td class="">random</td><td class="">1.6%</td><td class="">1.1% ± 0.4%</td></tr><tr><td class="text">v2.3a natural filler, masked</td><td class="">random</td><td class="">1.6%</td><td class="">0.2% ± 0.3%</td></tr><tr><td class="text">v2.3b natural filler, visible</td><td class="">text-like</td><td class="">3.7%</td><td class="">1.0% ± 0.5%</td></tr></tbody></table><p class="note">Measured: mean per-step difference to the v1 baseline over steps 20–39 ± its standard error (both runs see the same data in the same order, so steps are paired). v2.1 enters the fit; v2.3a/b do not. The model overpredicts at these 2k-token micro-batches, most for text-like pads.</p></div>
+<h2 id="repro">Reproduce</h2><pre>source experiments/derisk-v1/env.sh
+python experiments/choose-datasets-v1/sample_datasets.py --output-dir experiments/choose-datasets-v1/samples
+python experiments/choose-datasets-v1/make_generation_template.py
+python experiments/choose-datasets-v1/test_ep_model.py
+python experiments/choose-datasets-v1/screen.py --workers 64
+python experiments/choose-datasets-v1/make_report.py --output hub/choose-datasets-v1/index.html</pre>
+</main>
+<script type="application/json" id="report-data">{"charts":{"saving":{"type":"bars","title":"Predicted step-time saving from random pad tokens","subtitle":"2 sequences per GPU, pad to the longest in each micro-batch; mean over 20 random 2,560-sample orders","categories":["4,096","8,192"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[1.6469217275369115,1.8187166867360347]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[2.4165431823368793,3.5622946929532704]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[2.1772042770354556,3.5706482664722747]},{"label":"WildChat-1M","color":"--series-3","values":[2.2551936941362403,2.5615668757136127]}],"x":{"label":"Truncation"},"y":{"label":"Step time saved","fmt":"pct1","tickFmt":"pct0"},"height":250},"cdf":{"type":"line","title":"Token length per sample (untruncated)","subtitle":"Share of samples at or below each length, Nemotron 3 Nano tokenizer and chat template","series":[{"label":"Tulu-3 (baseline)","color":"--deemph","points":[[0,0.0],[128,13.883333333333333],[256,28.81666666666667],[384,43.15],[512,55.51666666666667],[640,63.849999999999994],[768,68.91666666666667],[896,73.55000000000001],[1024,77.91666666666667],[1152,82.33333333333334],[1280,86.23333333333333],[1408,89.3],[1536,91.58333333333334],[1664,92.98333333333333],[1792,94.15],[1920,95.0],[2048,95.55],[2176,95.91666666666666],[2304,96.26666666666667],[2432,96.5],[2560,96.78333333333333],[2688,97.1],[2816,97.26666666666667],[2944,97.36666666666667],[3072,97.55],[3200,97.71666666666667],[3328,97.81666666666666],[3456,97.91666666666666],[3584,97.95],[3712,98.0],[3840,98.03333333333333],[3968,98.15],[4096,98.26666666666667],[4224,98.38333333333334],[4352,98.43333333333332],[4480,98.5],[4608,98.53333333333333],[4736,98.53333333333333],[4864,98.53333333333333],[4992,98.6],[5120,98.65],[5248,98.66666666666667],[5376,98.71666666666667],[5504,98.75],[5632,98.76666666666667],[5760,98.8],[5888,98.85000000000001],[6016,98.9],[6144,98.91666666666666],[6272,98.96666666666667],[6400,99.03333333333333],[6528,99.03333333333333],[6656,99.03333333333333],[6784,99.06666666666666],[6912,99.08333333333333],[7040,99.08333333333333],[7168,99.11666666666666],[7296,99.11666666666666],[7424,99.13333333333333],[7552,99.15],[7680,99.16666666666667],[7808,99.18333333333334],[7936,99.21666666666667],[8064,99.25],[8192,99.25],[8320,99.25],[8448,99.28333333333333],[8576,99.3],[8704,99.31666666666666],[8832,99.31666666666666],[8960,99.35000000000001],[9088,99.38333333333334],[9216,99.4],[9344,99.4],[9472,99.4],[9600,99.4],[9728,99.41666666666666],[9856,99.41666666666666],[9984,99.41666666666666],[10112,99.41666666666666],[10240,99.41666666666666],[10368,99.43333333333332],[10496,99.43333333333332],[10624,99.43333333333332],[10752,99.46666666666667],[10880,99.48333333333333],[11008,99.5],[11136,99.5],[11264,99.51666666666667],[11392,99.51666666666667],[11520,99.51666666666667],[11648,99.53333333333333],[11776,99.55000000000001],[11904,99.55000000000001],[12032,99.55000000000001],[12160,99.55000000000001],[12288,99.58333333333333],[12416,99.58333333333333],[12544,99.58333333333333],[12672,99.6],[12800,99.65],[12928,99.66666666666667],[13056,99.66666666666667],[13184,99.68333333333334],[13312,99.68333333333334],[13440,99.68333333333334],[13568,99.68333333333334],[13696,99.68333333333334],[13824,99.68333333333334],[13952,99.68333333333334],[14080,99.68333333333334],[14208,99.68333333333334],[14336,99.7],[14464,99.7],[14592,99.7],[14720,99.7],[14848,99.71666666666667],[14976,99.71666666666667],[15104,99.71666666666667],[15232,99.71666666666667],[15360,99.71666666666667],[15488,99.71666666666667],[15616,99.71666666666667],[15744,99.71666666666667],[15872,99.71666666666667],[16000,99.71666666666667],[16128,99.73333333333333],[16256,99.73333333333333],[16384,99.75]]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","points":[[0,0.0],[128,0.15],[256,1.0999999999999999],[384,3.05],[512,5.816666666666666],[640,9.583333333333334],[768,13.616666666666665],[896,17.566666666666666],[1024,20.9],[1152,24.866666666666667],[1280,28.26666666666667],[1408,31.766666666666666],[1536,35.083333333333336],[1664,38.3],[1792,41.266666666666666],[1920,43.38333333333333],[2048,45.53333333333333],[2176,47.66666666666667],[2304,49.28333333333333],[2432,51.06666666666667],[2560,52.983333333333334],[2688,54.86666666666666],[2816,56.233333333333334],[2944,57.833333333333336],[3072,59.08333333333333],[3200,60.23333333333334],[3328,61.483333333333334],[3456,62.76666666666667],[3584,64.06666666666668],[3712,65.23333333333333],[3840,66.36666666666666],[3968,67.33333333333333],[4096,68.26666666666667],[4224,69.03333333333333],[4352,69.78333333333333],[4480,70.78333333333333],[4608,71.63333333333334],[4736,72.26666666666667],[4864,72.89999999999999],[4992,73.91666666666666],[5120,74.55000000000001],[5248,75.21666666666667],[5376,75.94999999999999],[5504,76.55],[5632,77.26666666666667],[5760,78.05],[5888,78.7],[6016,79.38333333333333],[6144,80.0],[6272,80.65],[6400,81.26666666666667],[6528,81.78333333333333],[6656,82.26666666666667],[6784,82.71666666666667],[6912,83.2],[7040,83.8],[7168,84.3],[7296,84.91666666666666],[7424,85.51666666666667],[7552,85.91666666666666],[7680,86.48333333333333],[7808,86.86666666666667],[7936,87.28333333333333],[8064,87.68333333333334],[8192,88.13333333333333],[8320,88.5],[8448,88.8],[8576,89.13333333333333],[8704,89.5],[8832,89.75],[8960,90.13333333333333],[9088,90.45],[9216,90.83333333333333],[9344,91.2],[9472,91.53333333333333],[9600,91.73333333333333],[9728,91.93333333333334],[9856,92.23333333333333],[9984,92.51666666666667],[10112,92.76666666666667],[10240,93.0],[10368,93.28333333333333],[10496,93.41666666666667],[10624,93.60000000000001],[10752,93.73333333333333],[10880,93.96666666666667],[11008,94.11666666666667],[11136,94.31666666666668],[11264,94.5],[11392,94.71666666666667],[11520,95.03333333333333],[11648,95.19999999999999],[11776,95.35],[11904,95.51666666666667],[12032,95.7],[12160,95.86666666666666],[12288,96.01666666666667],[12416,96.11666666666666],[12544,96.23333333333333],[12672,96.35000000000001],[12800,96.43333333333334],[12928,96.6],[13056,96.73333333333333],[13184,96.81666666666666],[13312,96.88333333333333],[13440,97.0],[13568,97.1],[13696,97.13333333333334],[13824,97.23333333333333],[13952,97.36666666666667],[14080,97.45],[14208,97.55],[14336,97.58333333333333],[14464,97.65],[14592,97.76666666666667],[14720,97.83333333333334],[14848,97.89999999999999],[14976,98.01666666666667],[15104,98.13333333333333],[15232,98.16666666666667],[15360,98.23333333333333],[15488,98.33333333333333],[15616,98.4],[15744,98.53333333333333],[15872,98.58333333333333],[16000,98.63333333333333],[16128,98.66666666666667],[16256,98.71666666666667],[16384,98.73333333333333]]},{"label":"Mixture-of-Thoughts","color":"--series-2","points":[[0,0.0],[128,0.0],[256,0.0],[384,0.08333333333333334],[512,1.0666666666666667],[640,3.4000000000000004],[768,7.6],[896,11.783333333333333],[1024,15.883333333333333],[1152,19.1],[1280,21.916666666666668],[1408,24.666666666666668],[1536,26.78333333333333],[1664,28.9],[1792,30.966666666666665],[1920,32.666666666666664],[2048,34.43333333333333],[2176,36.13333333333333],[2304,37.666666666666664],[2432,39.46666666666667],[2560,40.91666666666667],[2688,42.31666666666667],[2816,43.63333333333333],[2944,44.83333333333333],[3072,46.11666666666667],[3200,47.333333333333336],[3328,48.56666666666667],[3456,49.61666666666667],[3584,50.76666666666667],[3712,51.68333333333334],[3840,52.900000000000006],[3968,53.7],[4096,54.68333333333333],[4224,55.7],[4352,56.8],[4480,57.4],[4608,58.333333333333336],[4736,59.38333333333333],[4864,60.199999999999996],[4992,61.150000000000006],[5120,61.85000000000001],[5248,62.71666666666667],[5376,63.483333333333334],[5504,64.14999999999999],[5632,64.91666666666667],[5760,65.64999999999999],[5888,66.41666666666667],[6016,67.08333333333333],[6144,67.56666666666666],[6272,68.43333333333334],[6400,68.98333333333333],[6528,69.48333333333333],[6656,70.01666666666667],[6784,70.68333333333334],[6912,71.2],[7040,71.83333333333334],[7168,72.35000000000001],[7296,72.8],[7424,73.13333333333333],[7552,73.66666666666667],[7680,74.23333333333333],[7808,74.9],[7936,75.41666666666667],[8064,75.8],[8192,76.35],[8320,76.81666666666666],[8448,77.10000000000001],[8576,77.4],[8704,77.83333333333333],[8832,77.98333333333333],[8960,78.23333333333333],[9088,78.63333333333333],[9216,78.96666666666667],[9344,79.28333333333333],[9472,79.55],[9600,79.78333333333333],[9728,80.08333333333333],[9856,80.23333333333333],[9984,80.56666666666666],[10112,80.78333333333333],[10240,80.93333333333334],[10368,81.2],[10496,81.41666666666667],[10624,81.75],[10752,82.05],[10880,82.21666666666667],[11008,82.48333333333333],[11136,82.76666666666667],[11264,83.08333333333333],[11392,83.36666666666666],[11520,83.55],[11648,83.81666666666666],[11776,84.06666666666666],[11904,84.28333333333333],[12032,84.51666666666667],[12160,84.75],[12288,84.85000000000001],[12416,84.98333333333333],[12544,85.16666666666667],[12672,85.48333333333333],[12800,85.65],[12928,85.76666666666667],[13056,85.91666666666666],[13184,86.18333333333334],[13312,86.36666666666667],[13440,86.56666666666666],[13568,86.78333333333333],[13696,86.93333333333332],[13824,87.18333333333334],[13952,87.4],[14080,87.66666666666667],[14208,87.78333333333333],[14336,87.91666666666667],[14464,88.16666666666667],[14592,88.3],[14720,88.41666666666667],[14848,88.63333333333333],[14976,88.94999999999999],[15104,89.21666666666667],[15232,89.41666666666667],[15360,89.60000000000001],[15488,89.78333333333333],[15616,89.93333333333334],[15744,90.11666666666667],[15872,90.4],[16000,90.60000000000001],[16128,90.75],[16256,90.95],[16384,91.18333333333334]]},{"label":"WildChat-1M","color":"--series-3","points":[[0,0.0],[128,7.966666666666667],[256,14.916666666666668],[384,22.833333333333332],[512,31.233333333333334],[640,38.6],[768,45.6],[896,51.21666666666667],[1024,56.25],[1152,61.0],[1280,67.91666666666667],[1408,73.08333333333333],[1536,76.25],[1664,78.75],[1792,81.0],[1920,82.51666666666667],[2048,83.65],[2176,85.01666666666667],[2304,86.01666666666667],[2432,86.98333333333333],[2560,87.76666666666667],[2688,88.66666666666667],[2816,89.4],[2944,90.14999999999999],[3072,90.63333333333333],[3200,91.10000000000001],[3328,91.66666666666666],[3456,92.30000000000001],[3584,93.01666666666667],[3712,93.56666666666666],[3840,93.95],[3968,94.35],[4096,94.6],[4224,95.35],[4352,95.95],[4480,96.28333333333333],[4608,96.51666666666667],[4736,96.73333333333333],[4864,96.75],[4992,96.83333333333334],[5120,96.88333333333333],[5248,96.98333333333333],[5376,97.06666666666666],[5504,97.21666666666667],[5632,97.31666666666666],[5760,97.36666666666667],[5888,97.43333333333334],[6016,97.56666666666666],[6144,97.63333333333334],[6272,97.68333333333334],[6400,97.71666666666667],[6528,97.73333333333333],[6656,97.83333333333334],[6784,97.96666666666667],[6912,97.98333333333333],[7040,98.05],[7168,98.06666666666666],[7296,98.06666666666666],[7424,98.13333333333333],[7552,98.2],[7680,98.25],[7808,98.28333333333333],[7936,98.33333333333333],[8064,98.33333333333333],[8192,98.36666666666667],[8320,98.4],[8448,98.45],[8576,98.48333333333333],[8704,98.48333333333333],[8832,98.55000000000001],[8960,98.55000000000001],[9088,98.55000000000001],[9216,98.61666666666666],[9344,98.65],[9472,98.65],[9600,98.66666666666667],[9728,98.73333333333333],[9856,98.75],[9984,98.75],[10112,98.76666666666667],[10240,98.76666666666667],[10368,98.78333333333333],[10496,98.78333333333333],[10624,98.8],[10752,98.81666666666666],[10880,98.83333333333333],[11008,98.85000000000001],[11136,98.9],[11264,98.91666666666666],[11392,98.95],[11520,99.0],[11648,99.01666666666667],[11776,99.06666666666666],[11904,99.06666666666666],[12032,99.08333333333333],[12160,99.08333333333333],[12288,99.1],[12416,99.11666666666666],[12544,99.11666666666666],[12672,99.11666666666666],[12800,99.15],[12928,99.16666666666667],[13056,99.18333333333334],[13184,99.18333333333334],[13312,99.18333333333334],[13440,99.2],[13568,99.2],[13696,99.26666666666667],[13824,99.26666666666667],[13952,99.28333333333333],[14080,99.3],[14208,99.31666666666666],[14336,99.31666666666666],[14464,99.33333333333333],[14592,99.33333333333333],[14720,99.35000000000001],[14848,99.35000000000001],[14976,99.35000000000001],[15104,99.35000000000001],[15232,99.38333333333334],[15360,99.38333333333334],[15488,99.38333333333334],[15616,99.38333333333334],[15744,99.38333333333334],[15872,99.4],[16000,99.4],[16128,99.4],[16256,99.4],[16384,99.4]]}],"x":{"label":"Tokens","fmt":"compact"},"y":{"label":"Samples at or below","fmt":"pct1","tickFmt":"pct0","min":0,"max":100},"shade":[8192,16384],"shadeLabel":"cut at 8,192","height":280},"padshare":{"type":"bars","title":"Padding share of the tokens","subtitle":"2 sequences per GPU","categories":["4,096","8,192"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[33.20071043489586,34.50579791988066]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[23.93591979067767,30.141024800851085]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[20.567886741436205,27.960003504055102]},{"label":"WildChat-1M","color":"--series-3","values":[31.80860077694901,33.69574952503899]}],"x":{"label":"Truncation"},"y":{"label":"Pad tokens / all tokens","fmt":"pct1","tickFmt":"pct0"},"height":250},"tokens":{"type":"bars","title":"Tokens per micro-batch per GPU","subtitle":"2 sequences per GPU, padding included","categories":["4,096","8,192"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[2061.526640625,2241.701953125]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[6498.238359375,9490.913828125]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[7164.5453906249995,11645.4475]},{"label":"WildChat-1M","color":"--series-3","values":[3471.9896093750003,3894.7285937499996]}],"x":{"label":"Truncation"},"y":{"label":"Tokens","fmt":"compact","tickFmt":"compact"},"height":250},"imbalance":{"type":"bars","title":"Predicted EP imbalance","subtitle":"Busiest GPU \u00f7 mean, averaged over dispatches and MoE layers; truncation 8,192, 2 sequences per GPU","categories":["<|im_end|>","random ids"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[1.6151813608397105,1.4064158378861953]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[1.558819475218845,1.3711178467847964]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[1.5225575575230077,1.3486039431984507]},{"label":"WildChat-1M","color":"--series-3","values":[1.6083503643658996,1.4020615540142374]}],"x":{"label":"Pad token"},"y":{"label":"Busiest \u00f7 mean","fmt":"x2","tickFmt":"x1"},"height":250},"lbs":{"type":"bars","title":"Predicted saving with 2 vs 4 sequences per GPU","subtitle":"4 per GPU at 8,192 allows 32,768-token micro-batches, which ran out of memory in derisk-v1","categories":["2 \u00b7 4,096","4 \u00b7 4,096","2 \u00b7 8,192","4 \u00b7 8,192"],"series":[{"label":"Tulu-3 (baseline)","color":"--deemph","values":[1.6469217275369115,3.2169571191022777,1.8187166867360347,3.593477758195234]},{"label":"Nemotron IF-Chat-v1","color":"--series-1","values":[2.4165431823368793,3.7877566474201476,3.5622946929532704,5.788892738622122]},{"label":"Mixture-of-Thoughts","color":"--series-2","values":[2.1772042770354556,3.1608579622169017,3.5706482664722747,5.523656315039786]},{"label":"WildChat-1M","color":"--series-3","values":[2.2551936941362403,4.141891160463877,2.5615668757136127,4.747962632662335]}],"x":{"label":"Sequences per GPU \u00b7 truncation"},"y":{"label":"Step time saved","fmt":"pct1","tickFmt":"pct0"},"height":250}}}</script>
+<script>
+"use strict";
+(() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const payload = JSON.parse(document.getElementById("report-data").textContent);
+
+  const svgEl = (tag, attrs, parent) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+    if (parent) parent.appendChild(node);
+    return node;
+  };
+  const htmlEl = (tag, className, parent, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    if (parent) parent.appendChild(node);
+    return node;
+  };
+  const cssVar = (name) => `var(${name})`;
+
+  const FORMATS = {
+    int: (v) => Math.round(v).toLocaleString("en-US"),
+    num0: (v) => v.toLocaleString("en-US", { maximumFractionDigits: 0 }),
+    num1: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+    num2: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    num3: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
+    pct1: (v) => `${v.toFixed(1)}%`,
+    pct2: (v) => `${v.toFixed(2)}%`,
+    frac_pct1: (v) => `${(100 * v).toFixed(1)}%`,
+    frac_pct2: (v) => `${(100 * v).toFixed(2)}%`,
+    s2: (v) => `${v.toFixed(2)} s`,
+    gib1: (v) => `${v.toFixed(1)} GiB`,
+    x2: (v) => `${v.toFixed(2)}×`,
+    s0: (v) => `${v.toFixed(0)} s`,
+    pct0: (v) => `${v.toFixed(0)}%`,
+    x1: (v) => `${v.toFixed(1)}×`,
+    frac_pct0: (v) => `${(100 * v).toFixed(0)}%`,
+    compact: (v) => {
+      const a = Math.abs(v);
+      if (a >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+      if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
+      if (a >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+      return v.toFixed(0);
+    },
+  };
+  const fmt = (name, v) => (v === null || v === undefined || Number.isNaN(v) ? "–" : (FORMATS[name] || FORMATS.num2)(v));
+
+  const niceTicks = (lo, hi, count) => {
+    if (hi <= lo) hi = lo + 1;
+    const raw = (hi - lo) / Math.max(count, 1);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+    const start = Math.floor(lo / step) * step;
+    const ticks = [];
+    for (let t = start; t <= hi + step * 1e-9; t += step) ticks.push(Number(t.toFixed(10)));
+    if (ticks[ticks.length - 1] < hi) ticks.push(Number((ticks[ticks.length - 1] + step).toFixed(10)));
+    return ticks;
+  };
+
+  // ---- tooltip -----------------------------------------------------------------------------
+  const makeTooltip = (plot) => htmlEl("div", "tooltip", plot);
+  const showTooltip = (tip, plot, x, y, head, rows) => {
+    tip.replaceChildren();
+    htmlEl("div", "t-head", tip, head);
+    for (const row of rows) {
+      const line = htmlEl("div", "t-row", tip);
+      if (row.color) htmlEl("i", "", line).style.background = cssVar(row.color);
+      htmlEl("b", "", line, row.value);
+      htmlEl("span", "", line, row.label);
+    }
+    tip.style.display = "block";
+    const pw = plot.clientWidth;
+    const tw = tip.offsetWidth;
+    const left = x + 14 + tw > pw ? Math.max(0, x - 14 - tw) : x + 14;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, y - 10)}px`;
+  };
+  const hideTooltip = (tip) => { tip.style.display = "none"; };
+
+  // ---- card with legend and table view -----------------------------------------------------
+  const buildTable = (wrap, table) => {
+    const t = htmlEl("table", "", wrap);
+    if (table.caption) htmlEl("caption", "note", t, table.caption).style.textAlign = "left";
+    const head = htmlEl("tr", "", htmlEl("thead", "", t));
+    for (const c of table.columns) htmlEl("th", "", head, c);
+    const body = htmlEl("tbody", "", t);
+    for (const r of table.rows) {
+      const tr = htmlEl("tr", "", body);
+      for (const cell of r) htmlEl("td", "", tr, cell);
+    }
+  };
+  const legendFor = (parent, series, kind) => {
+    if (!series || series.length < 2) return;
+    const legend = htmlEl("div", "legend", parent);
+    for (const s of series) {
+      const item = htmlEl("span", "", legend);
+      htmlEl("i", kind, item).style.background = cssVar(s.color);
+      htmlEl("span", "", item, s.label);
+    }
+  };
+
+  // ---- line chart (crosshair + one tooltip listing every series) ---------------------------
+  const lineChart = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const H = spec.height || 230;
+    const endLabels = spec.endLabels !== false && spec.series.length <= 4;
+    const m = { l: 66, r: endLabels ? 118 : 16, t: 10, b: 38 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const xs = [...new Set(spec.series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => a - b);
+    const ys = spec.series.flatMap((s) => s.points.map((p) => p[1]).filter((v) => v !== null));
+    let yLo = spec.y.min !== undefined ? spec.y.min : Math.min(...ys);
+    let yHi = spec.y.max !== undefined ? spec.y.max : Math.max(...ys);
+    if (spec.y.min === undefined) yLo -= (yHi - yLo) * 0.08 || 1;
+    const yt = niceTicks(yLo, yHi, 4);
+    yLo = spec.y.min !== undefined ? spec.y.min : yt[0];
+    yHi = yt[yt.length - 1];
+    const xLo = xs[0], xHi = xs[xs.length - 1] === xs[0] ? xs[0] + 1 : xs[xs.length - 1];
+    const sx = (x) => m.l + ((x - xLo) / (xHi - xLo)) * iw;
+    const sy = (y) => m.t + ih - ((y - yLo) / (yHi - yLo)) * ih;
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "line chart" }, plot);
+    if (spec.shade) {
+      const [a, b] = spec.shade;
+      svgEl("rect", { x: sx(a) - 4, y: m.t, width: Math.max(sx(b) - sx(a) + 8, 8), height: ih, style: "fill: var(--shade)" }, svg);
+      svgEl("text", { x: sx(a) - 2, y: m.t + 11 }, svg).textContent = spec.shadeLabel || "warmup";
+    }
+    for (const t of yt) {
+      if (t < yLo - 1e-12 || t > yHi + 1e-12) continue;
+      svgEl("line", { x1: m.l, x2: m.l + iw, y1: sy(t), y2: sy(t), style: `stroke: var(${t === yLo ? "--baseline" : "--grid"}); stroke-width: 1` }, svg);
+      svgEl("text", { x: m.l - 8, y: sy(t) + 4, "text-anchor": "end" }, svg).textContent = fmt(spec.y.tickFmt || spec.y.fmt, t);
+    }
+    const xTicks = spec.x.ticks || niceTicks(xLo, xHi, Math.min(10, xs.length)).filter((t) => t >= xLo && t <= xHi);
+    for (const t of xTicks) {
+      svgEl("text", { x: sx(t), y: m.t + ih + 16, "text-anchor": "middle" }, svg).textContent = fmt(spec.x.fmt || "int", t);
+    }
+    svgEl("text", { class: "label", x: m.l + iw / 2, y: H - 4, "text-anchor": "middle" }, svg).textContent = spec.x.label;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + ih / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.y.label;
+    const ends = [];
+    for (const s of spec.series) {
+      let d = "";
+      let pen = false;
+      for (const [x, y] of s.points) {
+        if (y === null) { pen = false; continue; }
+        d += `${pen ? "L" : "M"}${sx(x).toFixed(2)},${sy(y).toFixed(2)}`;
+        pen = true;
+      }
+      svgEl("path", { d, style: `fill: none; stroke: var(${s.color}); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round` }, svg);
+      if (spec.markers) {
+        for (const [x, y] of s.points) {
+          if (y === null) continue;
+          svgEl("circle", { cx: sx(x), cy: sy(y), r: 3.5, style: `fill: var(${s.color}); stroke: var(--surface); stroke-width: 2` }, svg);
+        }
+      }
+      const last = [...s.points].reverse().find((p) => p[1] !== null);
+      if (last) {
+        svgEl("circle", { cx: sx(last[0]), cy: sy(last[1]), r: 4, style: `fill: var(${s.color}); stroke: var(--surface); stroke-width: 2` }, svg);
+        ends.push({ y: sy(last[1]), x: sx(last[0]), s, v: last[1] });
+      }
+    }
+    if (endLabels) {
+      ends.sort((a, b) => a.y - b.y);
+      const collide = ends.some((e, i) => i > 0 && e.y - ends[i - 1].y < 26);
+      if (!collide) {
+        for (const e of ends) {
+          svgEl("line", { x1: e.x + 7, x2: e.x + 17, y1: e.y, y2: e.y, style: `stroke: var(${e.s.color}); stroke-width: 2` }, svg);
+          svgEl("text", { class: "label", x: e.x + 21, y: e.y - 2 }, svg).textContent = e.s.label;
+          svgEl("text", { x: e.x + 21, y: e.y + 11 }, svg).textContent = fmt(spec.y.fmt, e.v);
+        }
+      }
+    }
+    const cross = svgEl("line", { y1: m.t, y2: m.t + ih, style: "stroke: var(--muted); stroke-width: 1; display: none" }, svg);
+    const tip = makeTooltip(plot);
+    let index = -1;
+    const show = (i) => {
+      index = Math.max(0, Math.min(xs.length - 1, i));
+      const x = xs[index];
+      cross.setAttribute("x1", sx(x));
+      cross.setAttribute("x2", sx(x));
+      cross.style.display = "";
+      const rows = spec.series.map((s) => {
+        const p = s.points.find((q) => q[0] === x);
+        return { color: s.color, value: fmt(spec.y.fmt, p ? p[1] : null), label: s.label };
+      });
+      const yTop = Math.min(...spec.series.map((s) => { const p = s.points.find((q) => q[0] === x); return p && p[1] !== null ? sy(p[1]) : m.t + ih; }));
+      showTooltip(tip, plot, sx(x), yTop, `${spec.x.label} ${fmt(spec.x.fmt || "int", x)}`, rows);
+    };
+    const hide = () => { cross.style.display = "none"; hideTooltip(tip); };
+    const hit = svgEl("rect", { x: m.l, y: m.t, width: iw, height: ih, style: "fill: transparent" }, svg);
+    hit.addEventListener("pointermove", (ev) => {
+      const r = svg.getBoundingClientRect();
+      const px = ev.clientX - r.left;
+      let best = 0;
+      xs.forEach((x, i) => { if (Math.abs(sx(x) - px) < Math.abs(sx(xs[best]) - px)) best = i; });
+      show(best);
+    });
+    hit.addEventListener("pointerleave", hide);
+    plot.tabIndex = 0;
+    plot.addEventListener("focus", () => show(index < 0 ? xs.length - 1 : index));
+    plot.addEventListener("blur", hide);
+    plot.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowRight") { show(index + 1); ev.preventDefault(); }
+      if (ev.key === "ArrowLeft") { show(index - 1); ev.preventDefault(); }
+    });
+  };
+  const lineTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.x.label, ...spec.series.map((s) => s.label)],
+    rows: [...new Set(spec.series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => a - b).map((x) => [
+      fmt(spec.x.fmt || "int", x),
+      ...spec.series.map((s) => { const p = s.points.find((q) => q[0] === x); return fmt(spec.y.tableFmt || spec.y.fmt, p ? p[1] : null); }),
+    ]),
+  });
+
+  // ---- grouped bars (per-bar hover) --------------------------------------------------------
+  const barChart = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const H = spec.height || 220;
+    const m = { l: 66, r: 16, t: 10, b: 38 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const n = spec.categories.length, k = spec.series.length;
+    const vals = spec.series.flatMap((s) => s.values);
+    const yt = niceTicks(0, Math.max(...vals), 4);
+    const yHi = yt[yt.length - 1];
+    const sy = (v) => m.t + ih - (v / yHi) * ih;
+    const band = iw / n;
+    const bw = Math.min(24, (band - 12) / k - 2);
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "bar chart" }, plot);
+    for (const t of yt) {
+      svgEl("line", { x1: m.l, x2: m.l + iw, y1: sy(t), y2: sy(t), style: `stroke: var(${t === 0 ? "--baseline" : "--grid"}); stroke-width: 1` }, svg);
+      svgEl("text", { x: m.l - 8, y: sy(t) + 4, "text-anchor": "end" }, svg).textContent = fmt(spec.y.tickFmt || spec.y.fmt, t);
+    }
+    svgEl("text", { class: "label", x: m.l + iw / 2, y: H - 4, "text-anchor": "middle" }, svg).textContent = spec.x.label;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + ih / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.y.label;
+    const tip = makeTooltip(plot);
+    spec.categories.forEach((cat, i) => {
+      const cx = m.l + band * (i + 0.5);
+      svgEl("text", { x: cx, y: m.t + ih + 16, "text-anchor": "middle" }, svg).textContent = cat;
+      const groupW = k * bw + (k - 1) * 2;
+      spec.series.forEach((s, j) => {
+        const v = s.values[i];
+        const x = cx - groupW / 2 + j * (bw + 2);
+        const y = sy(v), h = m.t + ih - y, r = Math.min(4, h, bw / 2);
+        const d = `M${x},${m.t + ih}V${y + r}Q${x},${y} ${x + r},${y}H${x + bw - r}Q${x + bw},${y} ${x + bw},${y + r}V${m.t + ih}Z`;
+        const bar = svgEl("path", { d, style: `fill: var(${s.color})` }, svg);
+        const hit = svgEl("rect", { x: x - 1, y: m.t, width: bw + 2, height: ih, style: "fill: transparent" }, svg);
+        const on = () => { bar.style.opacity = "0.8"; showTooltip(tip, plot, x + bw, y, `${spec.x.label} ${cat}`, [{ color: s.color, value: fmt(spec.y.fmt, v), label: s.label }]); };
+        const off = () => { bar.style.opacity = ""; hideTooltip(tip); };
+        hit.addEventListener("pointermove", on);
+        hit.addEventListener("pointerleave", off);
+      });
+    });
+  };
+  const barTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.x.label, ...spec.series.map((s) => s.label)],
+    rows: spec.categories.map((c, i) => [c, ...spec.series.map((s) => fmt(spec.y.fmt, s.values[i]))]),
+  });
+
+  // ---- heatmap (per-cell hover, discrete sequential steps) ---------------------------------
+  const STEPS = 13;
+  const heatBin = (v, vmax, scale) => {
+    const f = Math.max(0, Math.min(1, v / (vmax || 1)));
+    const g = scale === "sqrt" ? Math.sqrt(f) : f;
+    return Math.min(STEPS - 1, Math.floor(g * STEPS));
+  };
+  const heatmap = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const rows = spec.rows.length, cols = spec.cols.length;
+    const groupEvery = spec.groupEvery || cols;
+    const nGroups = Math.ceil(cols / groupEvery);
+    const m = { l: 64, r: 10, t: spec.groupLabels ? 22 : 8, b: 30 };
+    const gap = 2;
+    const cw = (W - m.l - m.r - gap * (nGroups - 1)) / cols;
+    const ch = spec.cellHeight || 12;
+    const H = m.t + rows * ch + m.b;
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "heatmap" }, plot);
+    const cx = (c) => m.l + c * cw + Math.floor(c / groupEvery) * gap;
+    for (let r = 0; r < rows; r++) {
+      svgEl("text", { x: m.l - 8, y: m.t + r * ch + ch - 2, "text-anchor": "end" }, svg).textContent = spec.rows[r];
+      for (let c = 0; c < cols; c++) {
+        const v = spec.values[r][c];
+        svgEl("rect", { x: cx(c), y: m.t + r * ch, width: Math.max(cw - 0.5, 0.5), height: ch - 1, style: `fill: var(--seq-${heatBin(v, spec.vmax, spec.scale)})` }, svg);
+      }
+    }
+    if (spec.groupLabels) {
+      spec.groupLabels.forEach((label, g) => {
+        const x0 = cx(g * groupEvery), x1 = cx(Math.min(cols, (g + 1) * groupEvery) - 1) + cw;
+        svgEl("text", { x: (x0 + x1) / 2, y: m.t - 8, "text-anchor": "middle" }, svg).textContent = label;
+      });
+    }
+    svgEl("text", { class: "label", x: m.l + (W - m.l - m.r) / 2, y: H - 8, "text-anchor": "middle" }, svg).textContent = spec.colTitle;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + (rows * ch) / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.rowTitle;
+    const outline = svgEl("rect", { width: cw, height: ch, style: "fill: none; stroke: var(--text-1); stroke-width: 1.5; display: none" }, svg);
+    const tip = makeTooltip(plot);
+    svg.addEventListener("pointermove", (ev) => {
+      const box = svg.getBoundingClientRect();
+      const px = ev.clientX - box.left, py = ev.clientY - box.top;
+      const r = Math.floor((py - m.t) / ch);
+      let c = -1;
+      for (let j = 0; j < cols; j++) if (px >= cx(j) && px < cx(j) + cw + gap) { c = j; break; }
+      if (r < 0 || r >= rows || c < 0) { outline.style.display = "none"; hideTooltip(tip); return; }
+      outline.setAttribute("x", cx(c));
+      outline.setAttribute("y", m.t + r * ch);
+      outline.setAttribute("width", cw);
+      outline.style.display = "";
+      const rowsOut = [{ value: fmt(spec.fmt, spec.values[r][c]), label: spec.valueLabel || "" }];
+      if (spec.cellNotes) rowsOut.push({ value: "", label: spec.cellNotes[r][c] });
+      showTooltip(tip, plot, px, py, `${spec.rowName} ${spec.rows[r]} · ${spec.colName} ${spec.cols[c]}${spec.colSuffix ? spec.colSuffix[c] : ""}`, rowsOut);
+    });
+    svg.addEventListener("pointerleave", () => { outline.style.display = "none"; hideTooltip(tip); });
+    const scale = htmlEl("div", "scale", plot);
+    htmlEl("span", "", scale, fmt(spec.fmt, 0));
+    const ramp = htmlEl("span", "ramp", scale);
+    for (let i = 0; i < STEPS; i++) htmlEl("i", "", ramp).style.background = cssVar(`--seq-${i}`);
+    htmlEl("span", "", scale, `${fmt(spec.fmt, spec.vmax)}${spec.scale === "sqrt" ? " (square-root scale)" : ""}`);
+  };
+  const heatTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.rowName, ...spec.cols.map((c) => `${spec.colName} ${c}`)],
+    rows: spec.rows.map((r, i) => [r, ...spec.values[i].map((v) => fmt(spec.fmt, v))]),
+  });
+
+  // ---- mount -------------------------------------------------------------------------------
+  const RENDERERS = { line: [lineChart, lineTable, "line"], bars: [barChart, barTable, "rect"], heatmap: [heatmap, heatTable, null] };
+  const mounted = [];
+  const mount = (host) => {
+    const spec = payload.charts[host.dataset.chart];
+    if (!spec) { host.textContent = `missing chart ${host.dataset.chart}`; return; }
+    const [render, tabulate, legendKind] = RENDERERS[spec.type];
+    const fig = htmlEl("figure", "card", host);
+    const head = htmlEl("div", "card-head", fig);
+    const titles = htmlEl("div", "", head);
+    htmlEl("h3", "", titles, spec.title);
+    if (spec.subtitle) htmlEl("p", "subtitle", titles, spec.subtitle);
+    const toggle = htmlEl("button", "", head, "Table");
+    toggle.type = "button";
+    toggle.setAttribute("aria-pressed", "false");
+    if (legendKind) legendFor(fig, spec.series, legendKind);
+    const plot = htmlEl("div", "plot", fig);
+    const wrap = htmlEl("div", "table-wrap", fig);
+    wrap.hidden = true;
+    buildTable(wrap, tabulate(spec));
+    toggle.addEventListener("click", () => {
+      const showTable = wrap.hidden;
+      wrap.hidden = !showTable;
+      plot.hidden = showTable;
+      toggle.textContent = showTable ? "Chart" : "Table";
+      toggle.setAttribute("aria-pressed", String(showTable));
+    });
+    const draw = () => { plot.replaceChildren(); render(plot, spec); };
+    mounted.push(draw);
+    draw();
+  };
+  document.querySelectorAll("[data-chart]").forEach(mount);
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => mounted.forEach((draw) => draw()), 150);
+  });
+
+  const themeButton = document.getElementById("theme-toggle");
+  if (themeButton) {
+    const modes = ["auto", "light", "dark"];
+    themeButton.addEventListener("click", () => {
+      const current = document.documentElement.dataset.theme || "auto";
+      const next = modes[(modes.indexOf(current) + 1) % modes.length];
+      if (next === "auto") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = next;
+      themeButton.textContent = `Theme: ${next}`;
+    });
+  }
+})();
+</script>
+</body>
+</html>

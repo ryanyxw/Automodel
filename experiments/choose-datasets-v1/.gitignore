@@ -1,0 +1,2 @@
+# Raw dataset samples: sample_datasets.py recreates them (seed 20260926); samples/*.meta.json record the rows drawn.
+samples/*.jsonl

@@ -1,0 +1,250 @@
+{
+  "name": "mixture_of_thoughts",
+  "repo": "datasets/open-r1/Mixture-of-Thoughts",
+  "file_filter": "/all/",
+  "files": 15,
+  "rows_total": 349317,
+  "row_groups_total": 360,
+  "population": {
+    "source": {
+      "counts": {
+        "nvidia/Llama-Nemotron-Post-Training-Dataset": 172514,
+        "open-r1/OpenR1-Math-220k": 93733,
+        "open-r1/codeforces-cots": 83070
+      }
+    },
+    "num_tokens": {
+      "mean": 5772.780400037788,
+      "p10": 856.0,
+      "p50": 3485.0,
+      "p90": 15495.0,
+      "p99": 24220.0,
+      "max": 32223.0
+    }
+  },
+  "row_group_spread": {
+    "column": "source",
+    "value": "nvidia/Llama-Nemotron-Post-Training-Dataset",
+    "share_min": 0.428,
+    "share_median": 0.494,
+    "share_max": 0.534
+  },
+  "row_groups_drawn": [
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00009-of-00015.parquet",
+      "row_group": 22,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8688348
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00009-of-00015.parquet",
+      "row_group": 5,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9116929
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00014-of-00015.parquet",
+      "row_group": 16,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8798544
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00004-of-00015.parquet",
+      "row_group": 15,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8613487
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00013-of-00015.parquet",
+      "row_group": 14,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9018099
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00011-of-00015.parquet",
+      "row_group": 20,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8560259
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00010-of-00015.parquet",
+      "row_group": 22,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8566971
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00013-of-00015.parquet",
+      "row_group": 1,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8637930
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00007-of-00015.parquet",
+      "row_group": 14,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9009035
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00013-of-00015.parquet",
+      "row_group": 2,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8927136
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00009-of-00015.parquet",
+      "row_group": 13,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9028356
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00012-of-00015.parquet",
+      "row_group": 22,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8972284
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00010-of-00015.parquet",
+      "row_group": 3,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9080841
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00009-of-00015.parquet",
+      "row_group": 17,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9047311
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00011-of-00015.parquet",
+      "row_group": 18,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9283782
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00012-of-00015.parquet",
+      "row_group": 20,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9059681
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00001-of-00015.parquet",
+      "row_group": 20,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9116378
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00002-of-00015.parquet",
+      "row_group": 5,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8514140
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00013-of-00015.parquet",
+      "row_group": 20,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8688263
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00010-of-00015.parquet",
+      "row_group": 9,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8993344
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00000-of-00015.parquet",
+      "row_group": 23,
+      "rows": 288,
+      "kept": 200,
+      "bytes": 3060814
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00004-of-00015.parquet",
+      "row_group": 20,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8766574
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00004-of-00015.parquet",
+      "row_group": 18,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8446076
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00012-of-00015.parquet",
+      "row_group": 1,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8638334
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00001-of-00015.parquet",
+      "row_group": 3,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8413370
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00009-of-00015.parquet",
+      "row_group": 0,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8431977
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00004-of-00015.parquet",
+      "row_group": 13,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9117914
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00002-of-00015.parquet",
+      "row_group": 13,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8467022
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00014-of-00015.parquet",
+      "row_group": 12,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 9151038
+    },
+    {
+      "file": "datasets/open-r1/Mixture-of-Thoughts/all/train-00006-of-00015.parquet",
+      "row_group": 14,
+      "rows": 1000,
+      "kept": 200,
+      "bytes": 8490584
+    }
+  ],
+  "bytes_downloaded": 258704821,
+  "rows_sampled": 6000,
+  "seed": [
+    20260926,
+    1
+  ]
+}

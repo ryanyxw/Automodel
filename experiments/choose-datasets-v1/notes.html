@@ -1,0 +1,84 @@
+<h3>Short answer</h3>
+<p>Two candidates tie. <b>Nemotron IF-Chat-v1</b> and <b>Mixture-of-Thoughts</b> are both predicted to cut step time by
+<b>3.6%</b> with random pad tokens at truncation 8,192 and 2 sequences per GPU (0.31 s and 0.35 s per step). That is
+twice Tulu-3's 1.8% at the same truncation; at derisk's 4,096, Tulu-3 is 1.6% predicted and 1.1% measured. WildChat-1M
+comes third at 2.6%.</p>
+<p><b>Proposed pick: Nemotron IF-Chat-v1</b>, with Mixture-of-Thoughts as the second A/B arm. IF-Chat ties on the
+predicted gain, is Nemotron 3 Nano's own SFT data, and loses less to truncation at 8,192: 12% of samples are cut,
+against 24% of Mixture-of-Thoughts (mostly its Codeforces traces, which average 13k tokens).</p>
+
+<h3>Why the dataset with the highest EP imbalance does not win</h3>
+<ul>
+<li>With <code>&lt;|im_end|&gt;</code> pads, Tulu-3 (1.62×) and WildChat (1.61×) have the highest EP imbalance.
+Their heavy-tailed lengths give them the most padding, about 34%. But their micro-batches are small (2.2k and 3.9k
+tokens per GPU), so the expert work that the imbalance stretches is a small part of each step.</li>
+<li>IF-Chat and Mixture-of-Thoughts pad less (30% and 28%) but put 9.5k–11.6k tokens in each micro-batch. Each point
+of imbalance therefore costs them three to four times more time.</li>
+<li>With 2 sequences per GPU, the padding share cannot exceed 50% whatever the dataset, and all four land at 28–35%.
+What a dataset really changes is micro-batch size. Even the best natural dataset stays far below derisk-v2's 12% at
+fixed 8,192 padding, where 91% of tokens were pads.</li>
+</ul>
+
+<h3>Things the screen turned up</h3>
+<ul>
+<li><b>IF-Chat's long samples are its reasoning-off chats</b> (64% of rows, median 3,778 tokens, multi-turn), not
+its reasoning-on rows (median 1,306). The Nano chat template keeps only the final assistant turn's reasoning, and
+reasoning-on rows are mostly short instruction-following prompts.</li>
+<li><b>IF-Chat does not load in <code>ChatDataset</code> with Nano's stock chat template.</b> About a third of rows
+are multi-turn with reasoning, and they fail the answer-only loss mask because the template rewrites earlier turns
+(it drops their <code>&lt;think&gt;</code>). A copy of the template with <code>{% generation %}</code> markers
+(<code>templates/nano3_generation.jinja</code>) fixes this:
+<ul>
+<li>On 900 checked conversations it renders identical text.</li>
+<li>On the 797 conversations the stock path can mask, it produces identical loss masks.</li>
+</ul>
+The IF-Chat A/B would use it.</li>
+<li><b><code>ChatDataset</code>'s JSONL reader splits files with <code>str.splitlines()</code></b>, which also
+breaks on U+2028, U+2029 and U+0085 inside JSON strings. 32 of the 6,000 WildChat rows contain them, so JSONL written
+with raw Unicode fails to load. The samples here are written with ASCII escapes. The reader itself is an AutoModel
+bug and is left for a separate fix.</li>
+<li><code>nvidia/Nemotron-Post-Training-Dataset-v2</code>, the mix used by AutoModel's Nano-30B example, was not
+screened. It is gated, and this HF account has not accepted its terms.</li>
+</ul>
+
+<h3>How far to trust the predictions</h3>
+<ul>
+<li>The model is calibrated on six derisk runs, all on Tulu-3, and it overpredicts where micro-batches are small.
+Against the derisk-v2 batchmax runs (Tulu-3 at 4,096, about 2k tokens per micro-batch, per-step paired
+differences):
+<ul>
+<li>Random pads: 1.6% predicted vs 1.1% ± 0.4% measured.</li>
+<li>Masked natural filler: 1.6% predicted vs 0.2% ± 0.3%.</li>
+<li>Visible natural filler: 3.7% predicted vs 1.0% ± 0.5%.</li>
+</ul>
+IF-Chat's and Mixture-of-Thoughts' micro-batches are 4–5× larger. That is closer to the fixed-8,192 runs, where the
+model fits within 0.04 s, but expect their realized saving to fall somewhat below 3.6%. The small-batch bias also
+means the gap to WildChat and Tulu-3 is, if anything, larger than shown.</li>
+<li>The savings assume warm shape caches, as in derisk-v2's second pass. In a first pass, every new sequence length
+costs about 1 s of cuDNN plan building (derisk-v1), which dilutes the gain.</li>
+<li>WildChat's files are ordered by time. Its sample over-represents GPT-4 conversations, which run longer (15% vs
+12% for <code>gpt-4-1106-preview</code>), so its prediction is slightly optimistic. The other two samples match
+their splits to within 0.3 points.</li>
+</ul>
+
+<h3>Bigger levers than the dataset</h3>
+<ul>
+<li><b>Pads the router sees in context.</b> derisk-v2.3b's visible natural filler routed like real text (1.15×
+imbalance at fixed 8,192). Modeled that way, it would save 7.9% on IF-Chat and 7.8% on Mixture-of-Thoughts at
+8,192. That is an upper bound: at Tulu's small micro-batches the same model predicted 3.7% and 1.0% was
+measured.</li>
+<li><b>4 sequences per GPU at truncation 4,096.</b> The largest micro-batch is then 16k tokens, the same size that
+fit in derisk. Predicted savings: 3.2% on Tulu-3 and 3.8–4.1% on IF-Chat and WildChat. At 8,192, 4 per GPU predicts
+5.5–5.8% on IF-Chat and Mixture-of-Thoughts, but allows 32k-token micro-batches, which ran out of memory in
+derisk-v1.</li>
+<li><b>Keeping pads out of the experts.</b> DeepEP already skips tokens routed to index −1. Doing this would remove
+the hot spot and the wasted expert work outright, rather than spreading them.</li>
+</ul>
+
+<h3>Proposed next step (phase 2, not run)</h3>
+<p>A/B on IF-Chat and Mixture-of-Thoughts at truncation 8,192 with 2 sequences per GPU: <code>&lt;|im_end|&gt;</code>
+pads vs random pads, two passes of 20 steps each (derisk-v2's protocol), run one after another. That is 4 runs, about
+an hour of GPU time.</p>
+<p>Compare the arms step by step. Both arms see identical data in identical order, so pairing cuts the standard error
+3–5× (0.015–0.020 s instead of about 0.06 s on derisk's batchmax runs). A 3% effect on a roughly 9 s step is then
+many standard errors from zero.</p>

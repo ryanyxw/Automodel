@@ -1,0 +1,353 @@
+{
+  "name": "wildchat_1m",
+  "repo": "datasets/allenai/WildChat-1M",
+  "file_filter": "/data/",
+  "files": 14,
+  "rows_total": 837989,
+  "row_groups_total": 840,
+  "population": {
+    "model": {
+      "counts": {
+        "gpt-3.5-turbo-0613": 371271,
+        "gpt-3.5-turbo-0301": 195157,
+        "gpt-4-1106-preview": 98905,
+        "gpt-4-0125-preview": 61951,
+        "gpt-3.5-turbo-0125": 57426,
+        "gpt-4-0314": 53277,
+        "gpt-4-0613": 2
+      }
+    },
+    "language": {
+      "counts": {
+        "English": 478498,
+        "Chinese": 119302,
+        "Russian": 87127,
+        "French": 26977,
+        "Spanish": 20447,
+        "German": 16865,
+        "Arabic": 11919,
+        "Portuguese": 10386,
+        "Turkish": 6104,
+        "Italian": 5120,
+        "Vietnamese": 4746,
+        "Persian": 3913,
+        "Nolang": 3710,
+        "Polish": 3667,
+        "Japanese": 3493,
+        "Maori": 3282,
+        "Latin": 3229,
+        "Korean": 3213,
+        "Indonesian": 3063,
+        "Sotho": 2191
+      }
+    },
+    "turn": {
+      "mean": 2.3390211566022945,
+      "p10": 1.0,
+      "p50": 1.0,
+      "p90": 5.0,
+      "p99": 14.0,
+      "max": 249.0
+    },
+    "toxic": {
+      "counts": {
+        "False": 837989
+      }
+    }
+  },
+  "row_group_spread": {
+    "column": "model",
+    "value": "gpt-3.5-turbo-0613",
+    "share_min": 0.0,
+    "share_median": 0.1385,
+    "share_max": 1.0
+  },
+  "row_groups_drawn": [
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00008-of-00014.parquet",
+      "row_group": 46,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2463781
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00012-of-00014.parquet",
+      "row_group": 54,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 5642022
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00002-of-00014.parquet",
+      "row_group": 57,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2293470
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00009-of-00014.parquet",
+      "row_group": 52,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3092064
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00010-of-00014.parquet",
+      "row_group": 9,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 6355768
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00010-of-00014.parquet",
+      "row_group": 26,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3726056
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00001-of-00014.parquet",
+      "row_group": 10,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2415664
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00001-of-00014.parquet",
+      "row_group": 37,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2345112
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00001-of-00014.parquet",
+      "row_group": 7,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2126758
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00007-of-00014.parquet",
+      "row_group": 12,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2397000
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00000-of-00014.parquet",
+      "row_group": 18,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2752485
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00010-of-00014.parquet",
+      "row_group": 15,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 4533423
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00007-of-00014.parquet",
+      "row_group": 0,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2334597
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00006-of-00014.parquet",
+      "row_group": 56,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2130347
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00000-of-00014.parquet",
+      "row_group": 19,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2756984
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00009-of-00014.parquet",
+      "row_group": 39,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3097570
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00009-of-00014.parquet",
+      "row_group": 40,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3566912
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00004-of-00014.parquet",
+      "row_group": 11,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2394094
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00003-of-00014.parquet",
+      "row_group": 24,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2500852
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00004-of-00014.parquet",
+      "row_group": 27,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2433826
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00008-of-00014.parquet",
+      "row_group": 1,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 1952389
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00012-of-00014.parquet",
+      "row_group": 55,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3964916
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00003-of-00014.parquet",
+      "row_group": 16,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2457281
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00003-of-00014.parquet",
+      "row_group": 45,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2502862
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00013-of-00014.parquet",
+      "row_group": 38,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 5127491
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00010-of-00014.parquet",
+      "row_group": 39,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 6588541
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00011-of-00014.parquet",
+      "row_group": 45,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2934740
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00005-of-00014.parquet",
+      "row_group": 34,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2080978
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00004-of-00014.parquet",
+      "row_group": 39,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2076744
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00005-of-00014.parquet",
+      "row_group": 32,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2325487
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00011-of-00014.parquet",
+      "row_group": 22,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3150878
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00004-of-00014.parquet",
+      "row_group": 53,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2283977
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00004-of-00014.parquet",
+      "row_group": 58,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2264760
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00004-of-00014.parquet",
+      "row_group": 16,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2485305
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00012-of-00014.parquet",
+      "row_group": 46,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 4909665
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00009-of-00014.parquet",
+      "row_group": 33,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3190879
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00006-of-00014.parquet",
+      "row_group": 31,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2205832
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00012-of-00014.parquet",
+      "row_group": 10,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3168800
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00009-of-00014.parquet",
+      "row_group": 36,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 3027983
+    },
+    {
+      "file": "datasets/allenai/WildChat-1M/data/train-00005-of-00014.parquet",
+      "row_group": 14,
+      "rows": 1000,
+      "kept": 150,
+      "bytes": 2194657
+    }
+  ],
+  "bytes_downloaded": 122252950,
+  "rows_sampled": 6000,
+  "seed": [
+    20260926,
+    2
+  ]
+}

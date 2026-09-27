@@ -1,0 +1,69 @@
+<h3>Short answer</h3>
+<p>Yes, padding changes MFU a lot, but mostly in the metric rather than in useful work. AutoModel's
+<code>mfu</code> counts pad tokens as work, and it jumps about 10× (1.69% → 16.69%) when every
+micro-batch is padded to 8,192 tokens: the GPUs process 7.9× more tokens in a similar step time. Counting
+only real tokens, MFU goes 1.13% → 1.38% over the 20 steps. Once dynamic padding's per-shape caches are
+warm, it is clearly better: 4.88% effective MFU and 2,482 real tokens/s/GPU, versus 1.38% and 700 with
+fixed padding (<a href="#shapes">diagnostic</a>).</p>
+
+<h3>Why fixed padding looks almost free over these 20 steps</h3>
+<ul>
+<li><b>Per-shape tax on dynamic padding.</b> TE's cuDNN fused attention builds an execution plan for each
+new sequence length, which costs about 1.09 s per new length (cut-cross-entropy adds about 66 ms per new
+token-count bin). With 8 micro-batches per step and almost every length new, the first pass pays
+roughly 13 s per step: 17.8 s per step in pass 1 versus 4.49 s in pass 2 on the same data. pad-fixed8192 has
+one shape and pays once.</li>
+<li><b>Small micro-batches don't fill an H100.</b> About 2 × 700 real tokens per micro-batch per GPU
+leaves per-layer fixed costs (DeepEP dispatch/combine synchronization, FSDP collectives, host launch
+overhead) dominant. Even warm, dynamic padding reaches only 4.9% effective MFU. The 16K-token
+micro-batches of pad-fixed8192 amortize those costs, which is why its padded MFU is highest.</li>
+</ul>
+
+<h3>What the pad tokens do inside the MoE</h3>
+<ul>
+<li><b>They all take the same path.</b> Pads are the EOS token <code>&lt;|im_end|&gt;</code> with
+attention mask 0. Attention and Mamba mask them out, so every pad token reaches every MoE layer with the
+same hidden state, and the router sends all of them to the same 6 experts: 100% of pad assignments per
+step, versus about 10% on the top 6 for real tokens. The exact expert IDs are in the per-layer tables
+below.</li>
+<li><b>They are really computed.</b> Nemotron V3 does not pass its padding mask to the MoE layers (the
+MoE layer supports masking; the model just doesn't wire it up). In pad-fixed8192, about 91% of all
+routed-expert work therefore lands on 6 experts per layer, that is on the one to six GPUs hosting them.</li>
+<li><b>The GPUs hosting those experts become stragglers.</b> Expert-parallel imbalance (max ÷ mean
+assignments per GPU in a dispatch) averages about 2.8× with fixed padding versus about 1.7× with dynamic
+padding (worst dispatch about 5.2× versus about 2.9×). The hottest GPU peaks at 67.9 GiB, and with 4 sequences per GPU it
+ran out of memory inside the grouped expert GEMM.</li>
+<li><b>Measured in a trace.</b> In a 2-step Nsight Systems sample of pad-fixed8192, 33–38% of GPU kernel
+time on ranks 0 and 1 is DeepEP's <code>cached_notify_combine</code>, a synchronization kernel that
+mostly waits for the slowest GPU in each MoE dispatch (<a href="#profiling">Nsight handoff</a>).</li>
+<li><b>Rough cost of the hot spot (estimate).</b> Routed experts are 42.6% of the model's FLOPs per
+token. If each dispatch waits for the most-loaded GPU, a 2.8× imbalance stretches that phase about
+2.8×, so the step takes about 1.75× as long as perfectly balanced routing would.</li>
+</ul>
+
+<h3>What to do about it</h3>
+<ul>
+<li>Don't use AutoModel's <code>mfu</code> as an efficiency number when padding is heavy. Log effective
+MFU or real tokens/s next to it (both are in this report and in wandb).</li>
+<li>Keep pads out of the experts. Wiring <code>padding_mask</code> into Nemotron V3's MoE layers would
+remove both the wasted expert FLOPs and the EP hot spot; DeepEP already drops tokens routed to index −1.
+Packing (THD) avoids pads altogether. Both need their own derisk runs.</li>
+<li>If you keep dynamic padding with TE/cuDNN attention, bound the number of distinct shapes, for example
+by rounding lengths up to a multiple of 64–256 with <code>pad_seq_len_divisible</code> or bucketing by
+length. Otherwise every new length costs about 1 s until the cache fills.</li>
+<li>Next, profile further with <code>profile_nsys.sh</code>: capture pad-batchmax to split its per-step
+host time from GPU time, and capture all 8 ranks of pad-fixed8192 to see the hot GPUs' side of the DeepEP
+wait.</li>
+</ul>
+
+<h3>Caveats</h3>
+<ul>
+<li>20 steps, one seed, one node. Warmup steps 0–1 are excluded from all averages.</li>
+<li>The software stack deviates from the lockfile: CUDA 12.8 torch, and DeepEP built intranode-only with
+aggressive PTX instructions disabled (see Setup). Absolute MFU is low for both arms and may be higher on
+the reference container. Both arms used the same stack.</li>
+<li>The warm pass repeats identical shapes, so it is the best case for dynamic padding. A real run
+revisits lengths gradually as its caches fill.</li>
+<li>The padded FLOPs formula overstates executed work slightly for pads: TE skips attention for masked
+positions, and attention is about 3% of the formula's FLOPs at 700-token sequences and about 7% at 8,192.</li>
+</ul>

@@ -1,0 +1,1731 @@
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+> initializing torch distributed with 8 workers.
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+2026-09-26 19:42:39 | INFO | nemo_automodel.components.loggers.log_utils | Setting logging level to 20
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+2026-09-26 19:42:40 | INFO | root | 🚀 View run at https://wandb.ai/helloelwin/derisk-v1/runs/qnptxopi
+2026-09-26 19:42:40 | INFO | root | Experiment_details:
+2026-09-26 19:42:40 | INFO | root | Timestamp: '2026-09-26T19:42:40'
+2026-09-26 19:42:40 | INFO | root | User: elwin
+2026-09-26 19:42:40 | INFO | root | Host: instance-20260127-8
+2026-09-26 19:42:40 | INFO | root | World size: 8
+2026-09-26 19:42:40 | INFO | root | Backend: nccl
+2026-09-26 19:42:40 | INFO | root | Recipe: PaddingProbeRecipe
+2026-09-26 19:42:40 | INFO | root | Model name: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+recipe: TrainFinetuneRecipeForNextTokenPrediction
+step_scheduler:
+  global_batch_size: 128
+  local_batch_size: 4
+  max_steps: 3
+  ckpt_every_steps: 1000000
+  val_every_steps: 1000000
+  gc_every_steps: 10
+dist_env:
+  backend: nccl
+  timeout_minutes: 30
+rng:
+  _target_: nemo_automodel.components.training.rng.StatefulRNG
+  seed: 1111
+  ranked: true
+model:
+  _target_: nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained
+  pretrained_model_name_or_path: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  trust_remote_code: true
+  output_hidden_states: true
+  backend:
+    _target_: nemo_automodel.components.models.common.BackendConfig
+    attn: te
+    linear: te
+    rms_norm: torch_fp32
+    experts: torch_mm
+    dispatcher: deepep
+    fake_balanced_gate: false
+    enable_hf_state_dict_adapter: true
+checkpoint:
+  enabled: false
+  checkpoint_dir: experiments/derisk-v1/runs/smoke_pad_batchmax/checkpoint
+distributed:
+  strategy: fsdp2
+  tp_size: 1
+  cp_size: 1
+  pp_size: 1
+  ep_size: 8
+  sequence_parallel: false
+  activation_checkpointing: true
+loss_fn:
+  _target_: nemo_automodel.components.loss.linear_ce.FusedLinearCrossEntropy
+dataset:
+  _target_: nemo_automodel.components.datasets.llm.chat_dataset.ChatDataset
+  path_or_dataset_id: allenai/tulu-3-sft-mixture
+  split: train[:2560]
+  shuffle_seed: 42
+  seq_length: 4096
+  truncation: true
+  padding: do_not_pad
+packed_sequence:
+  packed_sequence_size: 0
+dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  shuffle: false
+  num_workers: 4
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.utils.default_collater
+optimizer:
+  _target_: transformer_engine.pytorch.optimizers.fused_adam.FusedAdam
+  betas:
+  - 0.9
+  - 0.95
+  eps: 1.0e-08
+  lr: 1.0e-05
+  weight_decay: 0
+  master_weights: true
+  store_param_remainders: true
+  exp_avg_dtype: torch.bfloat16
+  exp_avg_sq_dtype: torch.bfloat16
+lr_scheduler:
+  lr_decay_style: cosine
+  min_lr: 1.0e-06
+mfu:
+  peak_tflops: 989
+wandb:
+  project: derisk-v1
+  group: nano3-tulu3-padding-mfu-smoke
+  name: smoke_pad_batchmax
+  tags:
+  - nemotron-nano-3
+  - tulu3
+  - padding
+  - mfu
+  - ep8
+  dir: experiments/derisk-v1/runs/smoke_pad_batchmax
+probe:
+  output_dir: experiments/derisk-v1/runs/smoke_pad_batchmax
+  pad_distance_edges:
+  - 1
+  - 8
+  - 64
+  - 512
+  - 4096
+  nsys_start_step: -1
+  nsys_end_step: -1
+  nsys_ranks:
+  - 0
+2026-09-26 19:42:40 | INFO | root | Library versions:
+2026-09-26 19:42:40 | INFO | root | - nemo_automodel: 0.7.0+0f38dfd2 (/home/elwin/Automodel/nemo_automodel/__init__.py)
+2026-09-26 19:42:40 | INFO | root | - transformers: 5.15.1 (/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/transformers/__init__.py)
+2026-09-26 19:42:40 | INFO | root | - torch: 2.10.0+cu128 CUDA 12.8
+2026-09-26 19:42:40 | WARNING | root | save_consolidated=final but v4_compatible=False; checkpoint assets may be not compatible with transformers v4; [experimental] set --checkpoint.v4_compatible=True to enable
+2026-09-26 19:42:40 | INFO | root | No clip_grad_norm.max_norm specified in config, using default value of 1.0
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+2026-09-26 19:42:40 | WARNING | nemo_automodel.components.models.common.utils | rope_fusion is temporarily force-disabled globally (see #3027).
+2026-09-26 19:42:41 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:41 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:41 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:41 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:41 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:41 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:42:41 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:41 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:42 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:42 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:42 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:42 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:42:42 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:42 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:42 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:42 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:43 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:43 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:43 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:43 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:42:43 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:43 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:43 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:43 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:44 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:44 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:44 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:44 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:42:44 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:44 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:45 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/revision/main "HTTP/1.1 200 OK"
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 90561.78it/s]
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+2026-09-26 19:42:45 | INFO | nemo_automodel._transformers.model_init | Using custom model implementation for NemotronHForCausalLM
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] The following generation flags are not valid and may be ignored: ['output_hidden_states']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 297167.29it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 109798.53it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 43432.14it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 35069.43it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 234881.02it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 139015.76it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 90172.38it/s]
+2026-09-26 19:42:45 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/generation_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:42:45 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/generation_config.json "HTTP/1.1 200 OK"
+2026-09-26 19:42:45 | INFO | nemo_automodel._transformers.kernel_patches | Set global SDPA backends to [<SDPBackend.FLASH_ATTENTION: 1>, <SDPBackend.EFFICIENT_ATTENTION: 2>, <SDPBackend.MATH: 0>]
+2026-09-26 19:42:45 | INFO | nemo_automodel._transformers.kernel_patches | Patched model with SDPA method= [<SDPBackend.FLASH_ATTENTION: 1>, <SDPBackend.EFFICIENT_ATTENTION: 2>, <SDPBackend.MATH: 0>]
+Instantiation failed for `from_pretrained`
+Accepted signature : (pretrained_model_name_or_path, *model_args, use_liger_kernel: bool = True, use_sdpa_patching: bool = True, sdpa_method: Optional[List[Union[torch.nn.attention._SDPBackend, str]]] = None, torch_dtype='auto', attn_implementation: str = 'sdpa', quantization_config=None, force_hf: bool = False, distributed_setup: nemo_automodel.components.distributed.config.DistributedSetup | None = None, device_mesh: Optional[ForwardRef('DeviceMesh')] = None, qat_config: nemo_automodel.components.quantization.qat.QATConfig | None = None, peft_config: dict | None = None, fp8_config: Optional[ForwardRef('FP8Config')] = None, compile_config: Optional[ForwardRef('CompileConfig')] = None, **kwargs) -> transformers.modeling_utils.PreTrainedModel
+Positional args    : ()
+Keyword args       : {   'backend': BackendConfig(attn='te',
+                             sparse_attn='generic',
+                             linear='te',
+                             rms_norm='torch_fp32',
+                             rope='torch',
+                             rope_fusion=False,
+                             experts='torch_mm',
+                             dispatcher='deepep',
+                             dispatcher_num_sms=20,
+                             dispatcher_share_token_dispatcher=True,
+                             dispatcher_async_dispatch=False,
+                             mok=MoKBackendConfig(precision='bf16',
+                                                  fwd_num_comm_sms=40,
+                                                  bwd_num_comm_sms=28,
+                                                  minibatch_size=4096,
+                                                  macrobatch_size=131072,
+                                                  schedule_capacity_multiplier=0.5,
+                                                  all_gather_top_experts_chunk_bytes=2048),
+                             enable_deepep=None,
+                             fake_balanced_gate=False,
+                             fake_gate_noise=0.0,
+                             enable_hf_state_dict_adapter=True,
+                             enable_fsdp_optimizations=False,
+                             te_fp8=None,
+                             gate_precision=torch.float32,
+                             compile_attn=False,
+                             compile_situ=False,
+                             compile_norm=False,
+                             shared_expert_overlap=False,
+                             compile_router_weight=False,
+                             benchmark_static_routing=False,
+                             cuda_graph=CudaGraphConfig(modules=[])),
+    'distributed_setup': DistributedSetup(mesh_context=MeshContext(),
+                                          strategy_config=FSDP2Config(sequence_parallel=False,
+                                                                      tp_plan=None,
+                                                                      patch_is_packed_sequence=False,
+                                                                      mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16,
+                                                                                                     reduce_dtype=torch.float32,
+                                                                                                     output_dtype=torch.bfloat16,
+                                                                                                     cast_forward_inputs=True),
+                                                                      offload_policy=None,
+                                                                      autocast_dtype=None,
+                                                                      activation_checkpointing=False,
+                                                                      activation_checkpointing_scope=(   'all',),
+                                                                      defer_fsdp_grad_sync=True,
+                                                                      reshard_after_forward=None,
+                                                                      enable_async_tensor_parallel=False,
+                                                                      enable_compile=False,
+                                                                      enable_fsdp2_prefetch=False,
+                                                                      fsdp2_backward_prefetch_depth=2,
+                                                                      fsdp2_forward_prefetch_depth=1,
+                                                                      multimodal=MultimodalDistributedConfig(frozen_sharding='root',
+                                                                                                             vision=MultimodalVisionConfig(frame_sharding=CpVisionFrameShardingConfig(enabled=False,
+                                                                                                                                                                                      mesh_dims=(   'cp',),
+                                                                                                                                                                                      min_tokens=2048,
+                                                                                                                                                                                      min_frames=32,
+                                                                                                                                                                                      min_local_patch_rows=96,
+                                                                                                                                                                                      cost_alpha='auto')))),
+                                          pipeline_config=None,
+                                          moe_parallel_config=MoEParallelizerConfig(ignore_router_for_ac=True,
+                                                                                    reshard_after_forward=False,
+                                                                                    lm_head_precision=None,
+                                                                                    wrap_outer_model=True,
+                                                                                    mp_policy=None),
+                                          activation_checkpointing=True),
+    'freeze_config': None,
+    'has_packed_sequence': False,
+    'output_hidden_states': True,
+    'peft_config': None,
+    'pretrained_model_name_or_path': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'sdpa_method': None,
+    'trust_remote_code': True}
+Exception          : No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+    main()
+  File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+    recipe.setup()
+  File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+    super().setup()
+  File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+    model = build_model(
+            ^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+    model = cfg_model.instantiate(**kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+    raise e
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank0]:     main()
+[rank0]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+[rank0]:     recipe.setup()
+[rank0]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+[rank0]:     super().setup()
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+[rank0]:     model = build_model(
+[rank0]:             ^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+[rank0]:     model = cfg_model.instantiate(**kwargs)
+[rank0]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+[rank0]:     raise e
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+[rank0]:     return func(*args, **config_kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+[rank0]:     return cls._build_model(
+[rank0]:            ^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+[rank0]:     model = apply_model_infrastructure(
+[rank0]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+[rank0]:     model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+[rank0]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+[rank0]:     parallelize_fn(
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+[rank0]:     apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+[rank0]:     parallelize_module(
+[rank0]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+[rank0]:     return parallelize_plan._apply(module, device_mesh)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+[rank0]:     return distribute_module(
+[rank0]:            ^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+[rank0]:     partition_fn(name, submod, device_mesh)
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+[rank0]:     module.init_token_dispatcher(ep_mesh=device_mesh)
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+[rank0]:     self._init_deepep_buffer(ep_group)
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+[rank0]:     get_buffer(ep_group, self.config.expert_dim * dtype_size)
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+[rank0]:     _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+[rank0]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+[rank0]:     check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+[rank0]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+[rank0]:     import pynvml
+[rank0]: ModuleNotFoundError: No module named 'pynvml'
+Instantiation failed for `from_pretrained`
+Accepted signature : (pretrained_model_name_or_path, *model_args, use_liger_kernel: bool = True, use_sdpa_patching: bool = True, sdpa_method: Optional[List[Union[torch.nn.attention._SDPBackend, str]]] = None, torch_dtype='auto', attn_implementation: str = 'sdpa', quantization_config=None, force_hf: bool = False, distributed_setup: nemo_automodel.components.distributed.config.DistributedSetup | None = None, device_mesh: Optional[ForwardRef('DeviceMesh')] = None, qat_config: nemo_automodel.components.quantization.qat.QATConfig | None = None, peft_config: dict | None = None, fp8_config: Optional[ForwardRef('FP8Config')] = None, compile_config: Optional[ForwardRef('CompileConfig')] = None, **kwargs) -> transformers.modeling_utils.PreTrainedModel
+Positional args    : ()
+Keyword args       : {   'backend': BackendConfig(attn='te',
+                             sparse_attn='generic',
+                             linear='te',
+                             rms_norm='torch_fp32',
+                             rope='torch',
+                             rope_fusion=False,
+                             experts='torch_mm',
+                             dispatcher='deepep',
+                             dispatcher_num_sms=20,
+                             dispatcher_share_token_dispatcher=True,
+                             dispatcher_async_dispatch=False,
+                             mok=MoKBackendConfig(precision='bf16',
+                                                  fwd_num_comm_sms=40,
+                                                  bwd_num_comm_sms=28,
+                                                  minibatch_size=4096,
+                                                  macrobatch_size=131072,
+                                                  schedule_capacity_multiplier=0.5,
+                                                  all_gather_top_experts_chunk_bytes=2048),
+                             enable_deepep=None,
+                             fake_balanced_gate=False,
+                             fake_gate_noise=0.0,
+                             enable_hf_state_dict_adapter=True,
+                             enable_fsdp_optimizations=False,
+                             te_fp8=None,
+                             gate_precision=torch.float32,
+                             compile_attn=False,
+                             compile_situ=False,
+                             compile_norm=False,
+                             shared_expert_overlap=False,
+                             compile_router_weight=False,
+                             benchmark_static_routing=False,
+                             cuda_graph=CudaGraphConfig(modules=[])),
+    'distributed_setup': DistributedSetup(mesh_context=MeshContext(),
+                                          strategy_config=FSDP2Config(sequence_parallel=False,
+                                                                      tp_plan=None,
+                                                                      patch_is_packed_sequence=False,
+                                                                      mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16,
+                                                                                                     reduce_dtype=torch.float32,
+                                                                                                     output_dtype=torch.bfloat16,
+                                                                                                     cast_forward_inputs=True),
+                                                                      offload_policy=None,
+                                                                      autocast_dtype=None,
+                                                                      activation_checkpointing=False,
+                                                                      activation_checkpointing_scope=(   'all',),
+                                                                      defer_fsdp_grad_sync=True,
+                                                                      reshard_after_forward=None,
+                                                                      enable_async_tensor_parallel=False,
+                                                                      enable_compile=False,
+                                                                      enable_fsdp2_prefetch=False,
+                                                                      fsdp2_backward_prefetch_depth=2,
+                                                                      fsdp2_forward_prefetch_depth=1,
+                                                                      multimodal=MultimodalDistributedConfig(frozen_sharding='root',
+                                                                                                             vision=MultimodalVisionConfig(frame_sharding=CpVisionFrameShardingConfig(enabled=False,
+                                                                                                                                                                                      mesh_dims=(   'cp',),
+                                                                                                                                                                                      min_tokens=2048,
+                                                                                                                                                                                      min_frames=32,
+                                                                                                                                                                                      min_local_patch_rows=96,
+                                                                                                                                                                                      cost_alpha='auto')))),
+                                          pipeline_config=None,
+                                          moe_parallel_config=MoEParallelizerConfig(ignore_router_for_ac=True,
+                                                                                    reshard_after_forward=False,
+                                                                                    lm_head_precision=None,
+                                                                                    wrap_outer_model=True,
+                                                                                    mp_policy=None),
+                                          activation_checkpointing=True),
+    'freeze_config': None,
+    'has_packed_sequence': False,
+    'output_hidden_states': True,
+    'peft_config': None,
+    'pretrained_model_name_or_path': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'sdpa_method': None,
+    'trust_remote_code': True}
+Exception          : No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank1]:     main()
+[rank1]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+[rank1]:     recipe.setup()
+[rank1]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+[rank1]:     super().setup()
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+[rank1]:     model = build_model(
+[rank1]:             ^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+[rank1]:     model = cfg_model.instantiate(**kwargs)
+[rank1]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+[rank1]:     raise e
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+[rank1]:     return func(*args, **config_kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+[rank1]:     return cls._build_model(
+[rank1]:            ^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+[rank1]:     model = apply_model_infrastructure(
+[rank1]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+[rank1]:     model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+[rank1]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+[rank1]:     parallelize_fn(
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+[rank1]:     apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+[rank1]:     parallelize_module(
+[rank1]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+[rank1]:     return parallelize_plan._apply(module, device_mesh)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+[rank1]:     return distribute_module(
+[rank1]:            ^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+[rank1]:     partition_fn(name, submod, device_mesh)
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+[rank1]:     module.init_token_dispatcher(ep_mesh=device_mesh)
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+[rank1]:     self._init_deepep_buffer(ep_group)
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+[rank1]:     get_buffer(ep_group, self.config.expert_dim * dtype_size)
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+[rank1]:     _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+[rank1]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+[rank1]:     check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+[rank1]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+[rank1]:     import pynvml
+[rank1]: ModuleNotFoundError: No module named 'pynvml'
+Instantiation failed for `from_pretrained`
+Accepted signature : (pretrained_model_name_or_path, *model_args, use_liger_kernel: bool = True, use_sdpa_patching: bool = True, sdpa_method: Optional[List[Union[torch.nn.attention._SDPBackend, str]]] = None, torch_dtype='auto', attn_implementation: str = 'sdpa', quantization_config=None, force_hf: bool = False, distributed_setup: nemo_automodel.components.distributed.config.DistributedSetup | None = None, device_mesh: Optional[ForwardRef('DeviceMesh')] = None, qat_config: nemo_automodel.components.quantization.qat.QATConfig | None = None, peft_config: dict | None = None, fp8_config: Optional[ForwardRef('FP8Config')] = None, compile_config: Optional[ForwardRef('CompileConfig')] = None, **kwargs) -> transformers.modeling_utils.PreTrainedModel
+Positional args    : ()
+Keyword args       : {   'backend': BackendConfig(attn='te',
+                             sparse_attn='generic',
+                             linear='te',
+                             rms_norm='torch_fp32',
+                             rope='torch',
+                             rope_fusion=False,
+                             experts='torch_mm',
+                             dispatcher='deepep',
+                             dispatcher_num_sms=20,
+                             dispatcher_share_token_dispatcher=True,
+                             dispatcher_async_dispatch=False,
+                             mok=MoKBackendConfig(precision='bf16',
+                                                  fwd_num_comm_sms=40,
+                                                  bwd_num_comm_sms=28,
+                                                  minibatch_size=4096,
+                                                  macrobatch_size=131072,
+                                                  schedule_capacity_multiplier=0.5,
+                                                  all_gather_top_experts_chunk_bytes=2048),
+                             enable_deepep=None,
+                             fake_balanced_gate=False,
+                             fake_gate_noise=0.0,
+                             enable_hf_state_dict_adapter=True,
+                             enable_fsdp_optimizations=False,
+                             te_fp8=None,
+                             gate_precision=torch.float32,
+                             compile_attn=False,
+                             compile_situ=False,
+                             compile_norm=False,
+                             shared_expert_overlap=False,
+                             compile_router_weight=False,
+                             benchmark_static_routing=False,
+                             cuda_graph=CudaGraphConfig(modules=[])),
+    'distributed_setup': DistributedSetup(mesh_context=MeshContext(),
+                                          strategy_config=FSDP2Config(sequence_parallel=False,
+                                                                      tp_plan=None,
+                                                                      patch_is_packed_sequence=False,
+                                                                      mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16,
+                                                                                                     reduce_dtype=torch.float32,
+                                                                                                     output_dtype=torch.bfloat16,
+                                                                                                     cast_forward_inputs=True),
+                                                                      offload_policy=None,
+                                                                      autocast_dtype=None,
+                                                                      activation_checkpointing=False,
+                                                                      activation_checkpointing_scope=(   'all',),
+                                                                      defer_fsdp_grad_sync=True,
+                                                                      reshard_after_forward=None,
+                                                                      enable_async_tensor_parallel=False,
+                                                                      enable_compile=False,
+                                                                      enable_fsdp2_prefetch=False,
+                                                                      fsdp2_backward_prefetch_depth=2,
+                                                                      fsdp2_forward_prefetch_depth=1,
+                                                                      multimodal=MultimodalDistributedConfig(frozen_sharding='root',
+                                                                                                             vision=MultimodalVisionConfig(frame_sharding=CpVisionFrameShardingConfig(enabled=False,
+                                                                                                                                                                                      mesh_dims=(   'cp',),
+                                                                                                                                                                                      min_tokens=2048,
+                                                                                                                                                                                      min_frames=32,
+                                                                                                                                                                                      min_local_patch_rows=96,
+                                                                                                                                                                                      cost_alpha='auto')))),
+                                          pipeline_config=None,
+                                          moe_parallel_config=MoEParallelizerConfig(ignore_router_for_ac=True,
+                                                                                    reshard_after_forward=False,
+                                                                                    lm_head_precision=None,
+                                                                                    wrap_outer_model=True,
+                                                                                    mp_policy=None),
+                                          activation_checkpointing=True),
+    'freeze_config': None,
+    'has_packed_sequence': False,
+    'output_hidden_states': True,
+    'peft_config': None,
+    'pretrained_model_name_or_path': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'sdpa_method': None,
+    'trust_remote_code': True}
+Exception          : No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank2]:     main()
+[rank2]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+[rank2]:     recipe.setup()
+[rank2]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+[rank2]:     super().setup()
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+[rank2]:     model = build_model(
+[rank2]:             ^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+[rank2]:     model = cfg_model.instantiate(**kwargs)
+[rank2]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+[rank2]:     raise e
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+[rank2]:     return func(*args, **config_kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+[rank2]:     return cls._build_model(
+[rank2]:            ^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+[rank2]:     model = apply_model_infrastructure(
+[rank2]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+[rank2]:     model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+[rank2]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+[rank2]:     parallelize_fn(
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+[rank2]:     apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+[rank2]:     parallelize_module(
+[rank2]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+[rank2]:     return parallelize_plan._apply(module, device_mesh)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+[rank2]:     return distribute_module(
+[rank2]:            ^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+[rank2]:     partition_fn(name, submod, device_mesh)
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+[rank2]:     module.init_token_dispatcher(ep_mesh=device_mesh)
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+[rank2]:     self._init_deepep_buffer(ep_group)
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+[rank2]:     get_buffer(ep_group, self.config.expert_dim * dtype_size)
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+[rank2]:     _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+[rank2]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+[rank2]:     check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+[rank2]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+[rank2]:     import pynvml
+[rank2]: ModuleNotFoundError: No module named 'pynvml'
+Instantiation failed for `from_pretrained`
+Accepted signature : (pretrained_model_name_or_path, *model_args, use_liger_kernel: bool = True, use_sdpa_patching: bool = True, sdpa_method: Optional[List[Union[torch.nn.attention._SDPBackend, str]]] = None, torch_dtype='auto', attn_implementation: str = 'sdpa', quantization_config=None, force_hf: bool = False, distributed_setup: nemo_automodel.components.distributed.config.DistributedSetup | None = None, device_mesh: Optional[ForwardRef('DeviceMesh')] = None, qat_config: nemo_automodel.components.quantization.qat.QATConfig | None = None, peft_config: dict | None = None, fp8_config: Optional[ForwardRef('FP8Config')] = None, compile_config: Optional[ForwardRef('CompileConfig')] = None, **kwargs) -> transformers.modeling_utils.PreTrainedModel
+Positional args    : ()
+Keyword args       : {   'backend': BackendConfig(attn='te',
+                             sparse_attn='generic',
+                             linear='te',
+                             rms_norm='torch_fp32',
+                             rope='torch',
+                             rope_fusion=False,
+                             experts='torch_mm',
+                             dispatcher='deepep',
+                             dispatcher_num_sms=20,
+                             dispatcher_share_token_dispatcher=True,
+                             dispatcher_async_dispatch=False,
+                             mok=MoKBackendConfig(precision='bf16',
+                                                  fwd_num_comm_sms=40,
+                                                  bwd_num_comm_sms=28,
+                                                  minibatch_size=4096,
+                                                  macrobatch_size=131072,
+                                                  schedule_capacity_multiplier=0.5,
+                                                  all_gather_top_experts_chunk_bytes=2048),
+                             enable_deepep=None,
+                             fake_balanced_gate=False,
+                             fake_gate_noise=0.0,
+                             enable_hf_state_dict_adapter=True,
+                             enable_fsdp_optimizations=False,
+                             te_fp8=None,
+                             gate_precision=torch.float32,
+                             compile_attn=False,
+                             compile_situ=False,
+                             compile_norm=False,
+                             shared_expert_overlap=False,
+                             compile_router_weight=False,
+                             benchmark_static_routing=False,
+                             cuda_graph=CudaGraphConfig(modules=[])),
+    'distributed_setup': DistributedSetup(mesh_context=MeshContext(),
+                                          strategy_config=FSDP2Config(sequence_parallel=False,
+                                                                      tp_plan=None,
+                                                                      patch_is_packed_sequence=False,
+                                                                      mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16,
+                                                                                                     reduce_dtype=torch.float32,
+                                                                                                     output_dtype=torch.bfloat16,
+                                                                                                     cast_forward_inputs=True),
+                                                                      offload_policy=None,
+                                                                      autocast_dtype=None,
+                                                                      activation_checkpointing=False,
+                                                                      activation_checkpointing_scope=(   'all',),
+                                                                      defer_fsdp_grad_sync=True,
+                                                                      reshard_after_forward=None,
+                                                                      enable_async_tensor_parallel=False,
+                                                                      enable_compile=False,
+                                                                      enable_fsdp2_prefetch=False,
+                                                                      fsdp2_backward_prefetch_depth=2,
+                                                                      fsdp2_forward_prefetch_depth=1,
+                                                                      multimodal=MultimodalDistributedConfig(frozen_sharding='root',
+                                                                                                             vision=MultimodalVisionConfig(frame_sharding=CpVisionFrameShardingConfig(enabled=False,
+                                                                                                                                                                                      mesh_dims=(   'cp',),
+                                                                                                                                                                                      min_tokens=2048,
+                                                                                                                                                                                      min_frames=32,
+                                                                                                                                                                                      min_local_patch_rows=96,
+                                                                                                                                                                                      cost_alpha='auto')))),
+                                          pipeline_config=None,
+                                          moe_parallel_config=MoEParallelizerConfig(ignore_router_for_ac=True,
+                                                                                    reshard_after_forward=False,
+                                                                                    lm_head_precision=None,
+                                                                                    wrap_outer_model=True,
+                                                                                    mp_policy=None),
+                                          activation_checkpointing=True),
+    'freeze_config': None,
+    'has_packed_sequence': False,
+    'output_hidden_states': True,
+    'peft_config': None,
+    'pretrained_model_name_or_path': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'sdpa_method': None,
+    'trust_remote_code': True}
+Exception          : No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+
+[rank4]: Traceback (most recent call last):
+[rank4]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank4]:     main()
+[rank4]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+[rank4]:     recipe.setup()
+[rank4]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+[rank4]:     super().setup()
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+[rank4]:     model = build_model(
+[rank4]:             ^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+[rank4]:     model = cfg_model.instantiate(**kwargs)
+[rank4]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+[rank4]:     raise e
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+[rank4]:     return func(*args, **config_kwargs)
+[rank4]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+[rank4]:     return cls._build_model(
+[rank4]:            ^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+[rank4]:     model = apply_model_infrastructure(
+[rank4]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+[rank4]:     model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+[rank4]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+[rank4]:     parallelize_fn(
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+[rank4]:     apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+[rank4]:     parallelize_module(
+[rank4]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+[rank4]:     return parallelize_plan._apply(module, device_mesh)
+[rank4]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+[rank4]:     return distribute_module(
+[rank4]:            ^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+[rank4]:     partition_fn(name, submod, device_mesh)
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+[rank4]:     module.init_token_dispatcher(ep_mesh=device_mesh)
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+[rank4]:     self._init_deepep_buffer(ep_group)
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+[rank4]:     get_buffer(ep_group, self.config.expert_dim * dtype_size)
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+[rank4]:     _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+[rank4]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+[rank4]:     check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+[rank4]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+[rank4]:     import pynvml
+[rank4]: ModuleNotFoundError: No module named 'pynvml'
+Instantiation failed for `from_pretrained`
+Accepted signature : (pretrained_model_name_or_path, *model_args, use_liger_kernel: bool = True, use_sdpa_patching: bool = True, sdpa_method: Optional[List[Union[torch.nn.attention._SDPBackend, str]]] = None, torch_dtype='auto', attn_implementation: str = 'sdpa', quantization_config=None, force_hf: bool = False, distributed_setup: nemo_automodel.components.distributed.config.DistributedSetup | None = None, device_mesh: Optional[ForwardRef('DeviceMesh')] = None, qat_config: nemo_automodel.components.quantization.qat.QATConfig | None = None, peft_config: dict | None = None, fp8_config: Optional[ForwardRef('FP8Config')] = None, compile_config: Optional[ForwardRef('CompileConfig')] = None, **kwargs) -> transformers.modeling_utils.PreTrainedModel
+Positional args    : ()
+Keyword args       : {   'backend': BackendConfig(attn='te',
+                             sparse_attn='generic',
+                             linear='te',
+                             rms_norm='torch_fp32',
+                             rope='torch',
+                             rope_fusion=False,
+                             experts='torch_mm',
+                             dispatcher='deepep',
+                             dispatcher_num_sms=20,
+                             dispatcher_share_token_dispatcher=True,
+                             dispatcher_async_dispatch=False,
+                             mok=MoKBackendConfig(precision='bf16',
+                                                  fwd_num_comm_sms=40,
+                                                  bwd_num_comm_sms=28,
+                                                  minibatch_size=4096,
+                                                  macrobatch_size=131072,
+                                                  schedule_capacity_multiplier=0.5,
+                                                  all_gather_top_experts_chunk_bytes=2048),
+                             enable_deepep=None,
+                             fake_balanced_gate=False,
+                             fake_gate_noise=0.0,
+                             enable_hf_state_dict_adapter=True,
+                             enable_fsdp_optimizations=False,
+                             te_fp8=None,
+                             gate_precision=torch.float32,
+                             compile_attn=False,
+                             compile_situ=False,
+                             compile_norm=False,
+                             shared_expert_overlap=False,
+                             compile_router_weight=False,
+                             benchmark_static_routing=False,
+                             cuda_graph=CudaGraphConfig(modules=[])),
+    'distributed_setup': DistributedSetup(mesh_context=MeshContext(),
+                                          strategy_config=FSDP2Config(sequence_parallel=False,
+                                                                      tp_plan=None,
+                                                                      patch_is_packed_sequence=False,
+                                                                      mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16,
+                                                                                                     reduce_dtype=torch.float32,
+                                                                                                     output_dtype=torch.bfloat16,
+                                                                                                     cast_forward_inputs=True),
+                                                                      offload_policy=None,
+                                                                      autocast_dtype=None,
+                                                                      activation_checkpointing=False,
+                                                                      activation_checkpointing_scope=(   'all',),
+                                                                      defer_fsdp_grad_sync=True,
+                                                                      reshard_after_forward=None,
+                                                                      enable_async_tensor_parallel=False,
+                                                                      enable_compile=False,
+                                                                      enable_fsdp2_prefetch=False,
+                                                                      fsdp2_backward_prefetch_depth=2,
+                                                                      fsdp2_forward_prefetch_depth=1,
+                                                                      multimodal=MultimodalDistributedConfig(frozen_sharding='root',
+                                                                                                             vision=MultimodalVisionConfig(frame_sharding=CpVisionFrameShardingConfig(enabled=False,
+                                                                                                                                                                                      mesh_dims=(   'cp',),
+                                                                                                                                                                                      min_tokens=2048,
+                                                                                                                                                                                      min_frames=32,
+                                                                                                                                                                                      min_local_patch_rows=96,
+                                                                                                                                                                                      cost_alpha='auto')))),
+                                          pipeline_config=None,
+                                          moe_parallel_config=MoEParallelizerConfig(ignore_router_for_ac=True,
+                                                                                    reshard_after_forward=False,
+                                                                                    lm_head_precision=None,
+                                                                                    wrap_outer_model=True,
+                                                                                    mp_policy=None),
+                                          activation_checkpointing=True),
+    'freeze_config': None,
+    'has_packed_sequence': False,
+    'output_hidden_states': True,
+    'peft_config': None,
+    'pretrained_model_name_or_path': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'sdpa_method': None,
+    'trust_remote_code': True}
+Exception          : No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank3]:     main()
+[rank3]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+[rank3]:     recipe.setup()
+[rank3]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+[rank3]:     super().setup()
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+[rank3]:     model = build_model(
+[rank3]:             ^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+[rank3]:     model = cfg_model.instantiate(**kwargs)
+[rank3]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+[rank3]:     raise e
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+[rank3]:     return func(*args, **config_kwargs)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+[rank3]:     return cls._build_model(
+[rank3]:            ^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+[rank3]:     model = apply_model_infrastructure(
+[rank3]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+[rank3]:     model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+[rank3]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+[rank3]:     parallelize_fn(
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+[rank3]:     apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+[rank3]:     parallelize_module(
+[rank3]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+[rank3]:     return parallelize_plan._apply(module, device_mesh)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+[rank3]:     return distribute_module(
+[rank3]:            ^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+[rank3]:     partition_fn(name, submod, device_mesh)
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+[rank3]:     module.init_token_dispatcher(ep_mesh=device_mesh)
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+[rank3]:     self._init_deepep_buffer(ep_group)
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+[rank3]:     get_buffer(ep_group, self.config.expert_dim * dtype_size)
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+[rank3]:     _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+[rank3]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+[rank3]:     check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+[rank3]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+[rank3]:     import pynvml
+[rank3]: ModuleNotFoundError: No module named 'pynvml'
+Instantiation failed for `from_pretrained`
+Accepted signature : (pretrained_model_name_or_path, *model_args, use_liger_kernel: bool = True, use_sdpa_patching: bool = True, sdpa_method: Optional[List[Union[torch.nn.attention._SDPBackend, str]]] = None, torch_dtype='auto', attn_implementation: str = 'sdpa', quantization_config=None, force_hf: bool = False, distributed_setup: nemo_automodel.components.distributed.config.DistributedSetup | None = None, device_mesh: Optional[ForwardRef('DeviceMesh')] = None, qat_config: nemo_automodel.components.quantization.qat.QATConfig | None = None, peft_config: dict | None = None, fp8_config: Optional[ForwardRef('FP8Config')] = None, compile_config: Optional[ForwardRef('CompileConfig')] = None, **kwargs) -> transformers.modeling_utils.PreTrainedModel
+Positional args    : ()
+Keyword args       : {   'backend': BackendConfig(attn='te',
+                             sparse_attn='generic',
+                             linear='te',
+                             rms_norm='torch_fp32',
+                             rope='torch',
+                             rope_fusion=False,
+                             experts='torch_mm',
+                             dispatcher='deepep',
+                             dispatcher_num_sms=20,
+                             dispatcher_share_token_dispatcher=True,
+                             dispatcher_async_dispatch=False,
+                             mok=MoKBackendConfig(precision='bf16',
+                                                  fwd_num_comm_sms=40,
+                                                  bwd_num_comm_sms=28,
+                                                  minibatch_size=4096,
+                                                  macrobatch_size=131072,
+                                                  schedule_capacity_multiplier=0.5,
+                                                  all_gather_top_experts_chunk_bytes=2048),
+                             enable_deepep=None,
+                             fake_balanced_gate=False,
+                             fake_gate_noise=0.0,
+                             enable_hf_state_dict_adapter=True,
+                             enable_fsdp_optimizations=False,
+                             te_fp8=None,
+                             gate_precision=torch.float32,
+                             compile_attn=False,
+                             compile_situ=False,
+                             compile_norm=False,
+                             shared_expert_overlap=False,
+                             compile_router_weight=False,
+                             benchmark_static_routing=False,
+                             cuda_graph=CudaGraphConfig(modules=[])),
+    'distributed_setup': DistributedSetup(mesh_context=MeshContext(),
+                                          strategy_config=FSDP2Config(sequence_parallel=False,
+                                                                      tp_plan=None,
+                                                                      patch_is_packed_sequence=False,
+                                                                      mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16,
+                                                                                                     reduce_dtype=torch.float32,
+                                                                                                     output_dtype=torch.bfloat16,
+                                                                                                     cast_forward_inputs=True),
+                                                                      offload_policy=None,
+                                                                      autocast_dtype=None,
+                                                                      activation_checkpointing=False,
+                                                                      activation_checkpointing_scope=(   'all',),
+                                                                      defer_fsdp_grad_sync=True,
+                                                                      reshard_after_forward=None,
+                                                                      enable_async_tensor_parallel=False,
+                                                                      enable_compile=False,
+                                                                      enable_fsdp2_prefetch=False,
+                                                                      fsdp2_backward_prefetch_depth=2,
+                                                                      fsdp2_forward_prefetch_depth=1,
+                                                                      multimodal=MultimodalDistributedConfig(frozen_sharding='root',
+                                                                                                             vision=MultimodalVisionConfig(frame_sharding=CpVisionFrameShardingConfig(enabled=False,
+                                                                                                                                                                                      mesh_dims=(   'cp',),
+                                                                                                                                                                                      min_tokens=2048,
+                                                                                                                                                                                      min_frames=32,
+                                                                                                                                                                                      min_local_patch_rows=96,
+                                                                                                                                                                                      cost_alpha='auto')))),
+                                          pipeline_config=None,
+                                          moe_parallel_config=MoEParallelizerConfig(ignore_router_for_ac=True,
+                                                                                    reshard_after_forward=False,
+                                                                                    lm_head_precision=None,
+                                                                                    wrap_outer_model=True,
+                                                                                    mp_policy=None),
+                                          activation_checkpointing=True),
+    'freeze_config': None,
+    'has_packed_sequence': False,
+    'output_hidden_states': True,
+    'peft_config': None,
+    'pretrained_model_name_or_path': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'sdpa_method': None,
+    'trust_remote_code': True}
+Exception          : No module named 'pynvml'
+
+Instantiation failed for `from_pretrained`
+Accepted signature : (pretrained_model_name_or_path, *model_args, use_liger_kernel: bool = True, use_sdpa_patching: bool = True, sdpa_method: Optional[List[Union[torch.nn.attention._SDPBackend, str]]] = None, torch_dtype='auto', attn_implementation: str = 'sdpa', quantization_config=None, force_hf: bool = False, distributed_setup: nemo_automodel.components.distributed.config.DistributedSetup | None = None, device_mesh: Optional[ForwardRef('DeviceMesh')] = None, qat_config: nemo_automodel.components.quantization.qat.QATConfig | None = None, peft_config: dict | None = None, fp8_config: Optional[ForwardRef('FP8Config')] = None, compile_config: Optional[ForwardRef('CompileConfig')] = None, **kwargs) -> transformers.modeling_utils.PreTrainedModel
+Positional args    : ()
+Keyword args       : {   'backend': BackendConfig(attn='te',
+                             sparse_attn='generic',
+                             linear='te',
+                             rms_norm='torch_fp32',
+                             rope='torch',
+                             rope_fusion=False,
+                             experts='torch_mm',
+                             dispatcher='deepep',
+                             dispatcher_num_sms=20,
+                             dispatcher_share_token_dispatcher=True,
+                             dispatcher_async_dispatch=False,
+                             mok=MoKBackendConfig(precision='bf16',
+                                                  fwd_num_comm_sms=40,
+                                                  bwd_num_comm_sms=28,
+                                                  minibatch_size=4096,
+                                                  macrobatch_size=131072,
+                                                  schedule_capacity_multiplier=0.5,
+                                                  all_gather_top_experts_chunk_bytes=2048),
+                             enable_deepep=None,
+                             fake_balanced_gate=False,
+                             fake_gate_noise=0.0,
+                             enable_hf_state_dict_adapter=True,
+                             enable_fsdp_optimizations=False,
+                             te_fp8=None,
+                             gate_precision=torch.float32,
+                             compile_attn=False,
+                             compile_situ=False,
+                             compile_norm=False,
+                             shared_expert_overlap=False,
+                             compile_router_weight=False,
+                             benchmark_static_routing=False,
+                             cuda_graph=CudaGraphConfig(modules=[])),
+    'distributed_setup': DistributedSetup(mesh_context=MeshContext(),
+                                          strategy_config=FSDP2Config(sequence_parallel=False,
+                                                                      tp_plan=None,
+                                                                      patch_is_packed_sequence=False,
+                                                                      mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16,
+                                                                                                     reduce_dtype=torch.float32,
+                                                                                                     output_dtype=torch.bfloat16,
+                                                                                                     cast_forward_inputs=True),
+                                                                      offload_policy=None,
+                                                                      autocast_dtype=None,
+                                                                      activation_checkpointing=False,
+                                                                      activation_checkpointing_scope=(   'all',),
+                                                                      defer_fsdp_grad_sync=True,
+                                                                      reshard_after_forward=None,
+                                                                      enable_async_tensor_parallel=False,
+                                                                      enable_compile=False,
+                                                                      enable_fsdp2_prefetch=False,
+                                                                      fsdp2_backward_prefetch_depth=2,
+                                                                      fsdp2_forward_prefetch_depth=1,
+                                                                      multimodal=MultimodalDistributedConfig(frozen_sharding='root',
+                                                                                                             vision=MultimodalVisionConfig(frame_sharding=CpVisionFrameShardingConfig(enabled=False,
+                                                                                                                                                                                      mesh_dims=(   'cp',),
+                                                                                                                                                                                      min_tokens=2048,
+                                                                                                                                                                                      min_frames=32,
+                                                                                                                                                                                      min_local_patch_rows=96,
+                                                                                                                                                                                      cost_alpha='auto')))),
+                                          pipeline_config=None,
+                                          moe_parallel_config=MoEParallelizerConfig(ignore_router_for_ac=True,
+                                                                                    reshard_after_forward=False,
+                                                                                    lm_head_precision=None,
+                                                                                    wrap_outer_model=True,
+                                                                                    mp_policy=None),
+                                          activation_checkpointing=True),
+    'freeze_config': None,
+    'has_packed_sequence': False,
+    'output_hidden_states': True,
+    'peft_config': None,
+    'pretrained_model_name_or_path': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'sdpa_method': None,
+    'trust_remote_code': True}
+Exception          : No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+
+Instantiation failed for `from_pretrained`
+Accepted signature : (pretrained_model_name_or_path, *model_args, use_liger_kernel: bool = True, use_sdpa_patching: bool = True, sdpa_method: Optional[List[Union[torch.nn.attention._SDPBackend, str]]] = None, torch_dtype='auto', attn_implementation: str = 'sdpa', quantization_config=None, force_hf: bool = False, distributed_setup: nemo_automodel.components.distributed.config.DistributedSetup | None = None, device_mesh: Optional[ForwardRef('DeviceMesh')] = None, qat_config: nemo_automodel.components.quantization.qat.QATConfig | None = None, peft_config: dict | None = None, fp8_config: Optional[ForwardRef('FP8Config')] = None, compile_config: Optional[ForwardRef('CompileConfig')] = None, **kwargs) -> transformers.modeling_utils.PreTrainedModel
+Positional args    : ()
+Keyword args       : {   'backend': BackendConfig(attn='te',
+                             sparse_attn='generic',
+                             linear='te',
+                             rms_norm='torch_fp32',
+                             rope='torch',
+                             rope_fusion=False,
+                             experts='torch_mm',
+                             dispatcher='deepep',
+                             dispatcher_num_sms=20,
+                             dispatcher_share_token_dispatcher=True,
+                             dispatcher_async_dispatch=False,
+                             mok=MoKBackendConfig(precision='bf16',
+                                                  fwd_num_comm_sms=40,
+                                                  bwd_num_comm_sms=28,
+                                                  minibatch_size=4096,
+                                                  macrobatch_size=131072,
+                                                  schedule_capacity_multiplier=0.5,
+                                                  all_gather_top_experts_chunk_bytes=2048),
+                             enable_deepep=None,
+                             fake_balanced_gate=False,
+                             fake_gate_noise=0.0,
+                             enable_hf_state_dict_adapter=True,
+                             enable_fsdp_optimizations=False,
+                             te_fp8=None,
+                             gate_precision=torch.float32,
+                             compile_attn=False,
+                             compile_situ=False,
+                             compile_norm=False,
+                             shared_expert_overlap=False,
+                             compile_router_weight=False,
+                             benchmark_static_routing=False,
+                             cuda_graph=CudaGraphConfig(modules=[])),
+    'distributed_setup': DistributedSetup(mesh_context=MeshContext(),
+                                          strategy_config=FSDP2Config(sequence_parallel=False,
+                                                                      tp_plan=None,
+                                                                      patch_is_packed_sequence=False,
+                                                                      mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16,
+                                                                                                     reduce_dtype=torch.float32,
+                                                                                                     output_dtype=torch.bfloat16,
+                                                                                                     cast_forward_inputs=True),
+                                                                      offload_policy=None,
+                                                                      autocast_dtype=None,
+                                                                      activation_checkpointing=False,
+                                                                      activation_checkpointing_scope=(   'all',),
+                                                                      defer_fsdp_grad_sync=True,
+                                                                      reshard_after_forward=None,
+                                                                      enable_async_tensor_parallel=False,
+                                                                      enable_compile=False,
+                                                                      enable_fsdp2_prefetch=False,
+                                                                      fsdp2_backward_prefetch_depth=2,
+                                                                      fsdp2_forward_prefetch_depth=1,
+                                                                      multimodal=MultimodalDistributedConfig(frozen_sharding='root',
+                                                                                                             vision=MultimodalVisionConfig(frame_sharding=CpVisionFrameShardingConfig(enabled=False,
+                                                                                                                                                                                      mesh_dims=(   'cp',),
+                                                                                                                                                                                      min_tokens=2048,
+                                                                                                                                                                                      min_frames=32,
+                                                                                                                                                                                      min_local_patch_rows=96,
+                                                                                                                                                                                      cost_alpha='auto')))),
+                                          pipeline_config=None,
+                                          moe_parallel_config=MoEParallelizerConfig(ignore_router_for_ac=True,
+                                                                                    reshard_after_forward=False,
+                                                                                    lm_head_precision=None,
+                                                                                    wrap_outer_model=True,
+                                                                                    mp_policy=None),
+                                          activation_checkpointing=True),
+    'freeze_config': None,
+    'has_packed_sequence': False,
+    'output_hidden_states': True,
+    'peft_config': None,
+    'pretrained_model_name_or_path': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'sdpa_method': None,
+    'trust_remote_code': True}
+Exception          : No module named 'pynvml'
+
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+    return func(*args, **config_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+    return cls._build_model(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+    model = apply_model_infrastructure(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+    model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+    parallelize_fn(
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+    apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+    parallelize_module(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+    return parallelize_plan._apply(module, device_mesh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+    return distribute_module(
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+    partition_fn(name, submod, device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+    module.init_token_dispatcher(ep_mesh=device_mesh)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+    self._init_deepep_buffer(ep_group)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+    get_buffer(ep_group, self.config.expert_dim * dtype_size)
+  File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+    _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+    check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+    import pynvml
+ModuleNotFoundError: No module named 'pynvml'
+
+[rank7]: Traceback (most recent call last):
+[rank7]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank7]:     main()
+[rank7]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+[rank7]:     recipe.setup()
+[rank7]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+[rank7]:     super().setup()
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+[rank7]:     model = build_model(
+[rank7]:             ^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+[rank7]:     model = cfg_model.instantiate(**kwargs)
+[rank7]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+[rank7]:     raise e
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+[rank7]:     return func(*args, **config_kwargs)
+[rank7]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+[rank7]:     return cls._build_model(
+[rank7]:            ^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+[rank7]:     model = apply_model_infrastructure(
+[rank7]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+[rank7]:     model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+[rank7]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+[rank7]:     parallelize_fn(
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+[rank7]:     apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+[rank7]:     parallelize_module(
+[rank7]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+[rank7]:     return parallelize_plan._apply(module, device_mesh)
+[rank7]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+[rank7]:     return distribute_module(
+[rank7]:            ^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+[rank7]:     partition_fn(name, submod, device_mesh)
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+[rank7]:     module.init_token_dispatcher(ep_mesh=device_mesh)
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+[rank7]:     self._init_deepep_buffer(ep_group)
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+[rank7]:     get_buffer(ep_group, self.config.expert_dim * dtype_size)
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+[rank7]:     _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+[rank7]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+[rank7]:     check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+[rank7]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+[rank7]:     import pynvml
+[rank7]: ModuleNotFoundError: No module named 'pynvml'
+[rank6]: Traceback (most recent call last):
+[rank6]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank6]:     main()
+[rank6]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+[rank6]:     recipe.setup()
+[rank6]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+[rank6]:     super().setup()
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+[rank6]:     model = build_model(
+[rank6]:             ^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+[rank6]:     model = cfg_model.instantiate(**kwargs)
+[rank6]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+[rank6]:     raise e
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+[rank6]:     return func(*args, **config_kwargs)
+[rank6]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+[rank6]:     return cls._build_model(
+[rank6]:            ^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+[rank6]:     model = apply_model_infrastructure(
+[rank6]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+[rank6]:     model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+[rank6]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+[rank6]:     parallelize_fn(
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+[rank6]:     apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+[rank6]:     parallelize_module(
+[rank6]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+[rank6]:     return parallelize_plan._apply(module, device_mesh)
+[rank6]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+[rank6]:     return distribute_module(
+[rank6]:            ^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+[rank6]:     partition_fn(name, submod, device_mesh)
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+[rank6]:     module.init_token_dispatcher(ep_mesh=device_mesh)
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+[rank6]:     self._init_deepep_buffer(ep_group)
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+[rank6]:     get_buffer(ep_group, self.config.expert_dim * dtype_size)
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+[rank6]:     _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+[rank6]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+[rank6]:     check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+[rank6]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+[rank6]:     import pynvml
+[rank6]: ModuleNotFoundError: No module named 'pynvml'
+[rank5]: Traceback (most recent call last):
+[rank5]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank5]:     main()
+[rank5]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 402, in main
+[rank5]:     recipe.setup()
+[rank5]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 116, in setup
+[rank5]:     super().setup()
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 732, in setup
+[rank5]:     model = build_model(
+[rank5]:             ^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 329, in build_model
+[rank5]:     model = cfg_model.instantiate(**kwargs)
+[rank5]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 518, in instantiate
+[rank5]:     raise e
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/config/loader.py", line 499, in instantiate
+[rank5]:     return func(*args, **config_kwargs)
+[rank5]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 767, in from_pretrained
+[rank5]:     return cls._build_model(
+[rank5]:            ^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/auto_model.py", line 619, in _build_model
+[rank5]:     model = apply_model_infrastructure(
+[rank5]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 696, in apply_model_infrastructure
+[rank5]:     model = _shard_ep_fsdp(model, model_wrapper, parallelize_fn, mesh, reapply_trainability)
+[rank5]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/_transformers/infrastructure.py", line 215, in _shard_ep_fsdp
+[rank5]:     parallelize_fn(
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 1221, in parallelize_model
+[rank5]:     apply_ep(model, moe_mesh[ep_axis_name], moe_mesh=moe_mesh)
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 370, in apply_ep
+[rank5]:     parallelize_module(
+[rank5]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/parallel/api.py", line 86, in parallelize_module
+[rank5]:     return parallelize_plan._apply(module, device_mesh)
+[rank5]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 314, in _apply
+[rank5]:     return distribute_module(
+[rank5]:            ^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/tensor/_api.py", line 999, in distribute_module
+[rank5]:     partition_fn(name, submod, device_mesh)
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/parallelizer.py", line 311, in _partition_fn
+[rank5]:     module.init_token_dispatcher(ep_mesh=device_mesh)
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1010, in init_token_dispatcher
+[rank5]:     self._init_deepep_buffer(ep_group)
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/experts.py", line 1017, in _init_deepep_buffer
+[rank5]:     get_buffer(ep_group, self.config.expert_dim * dtype_size)
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/moe/megatron/fused_a2a.py", line 267, in get_buffer
+[rank5]:     _buffer = Buffer(group, num_nvl_bytes, num_rdma_bytes, explicitly_destroy=True)
+[rank5]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/buffer.py", line 65, in __init__
+[rank5]:     check_nvlink_connections(group, allow_nvlink_for_normal_mode, allow_nvlink_for_low_latency_mode, low_latency_mode)
+[rank5]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/deep_ep/utils.py", line 86, in check_nvlink_connections
+[rank5]:     import pynvml
+[rank5]: ModuleNotFoundError: No module named 'pynvml'
+W0926 19:42:47.875000 1521283 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1521302 closing signal SIGTERM
+W0926 19:42:47.876000 1521283 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1521303 closing signal SIGTERM
+W0926 19:42:47.877000 1521283 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1521305 closing signal SIGTERM
+W0926 19:42:47.877000 1521283 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1521306 closing signal SIGTERM
+W0926 19:42:47.878000 1521283 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1521307 closing signal SIGTERM
+W0926 19:42:47.878000 1521283 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1521308 closing signal SIGTERM
+W0926 19:42:47.879000 1521283 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1521309 closing signal SIGTERM
+E0926 19:42:48.708000 1521283 torch/distributed/elastic/multiprocessing/api.py:984] failed (exitcode: 1) local_rank: 2 (pid: 1521304) of binary: /home/elwin/venvs/automodel-cu12/bin/python
+Traceback (most recent call last):
+  File "/home/elwin/venvs/automodel-cu12/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/run.py", line 991, in main
+    run(args)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/run.py", line 982, in run
+    elastic_launch(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/home/elwin/Automodel/experiments/derisk-v1/train.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-09-26_19:42:48
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 0 (local_rank: 0)
+  exitcode  : -15 (pid: 1521302)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 1521302
+[2]:
+  time      : 2026-09-26_19:42:48
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 1 (local_rank: 1)
+  exitcode  : -15 (pid: 1521303)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 1521303
+[3]:
+  time      : 2026-09-26_19:42:48
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 1521305)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[4]:
+  time      : 2026-09-26_19:42:48
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 4 (local_rank: 4)
+  exitcode  : -15 (pid: 1521306)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 1521306
+[5]:
+  time      : 2026-09-26_19:42:48
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 5 (local_rank: 5)
+  exitcode  : 1 (pid: 1521307)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[6]:
+  time      : 2026-09-26_19:42:48
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 6 (local_rank: 6)
+  exitcode  : 1 (pid: 1521308)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[7]:
+  time      : 2026-09-26_19:42:48
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 7 (local_rank: 7)
+  exitcode  : -15 (pid: 1521309)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 1521309
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-09-26_19:42:47
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 1521304)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
+exit: 1

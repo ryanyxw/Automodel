@@ -1,0 +1,60 @@
+diff --git a/csrc/config.hpp b/csrc/config.hpp
+index 76987da..ee58244 100644
+--- a/csrc/config.hpp
++++ b/csrc/config.hpp
+@@ -98,7 +98,8 @@ struct Config {
+         num_bytes = ((num_bytes + 127) / 128) * 128;
+         return num_bytes;
+ #else
+-        EP_HOST_ASSERT(false and "NVSHMEM is disable during compilation");
++        // Intranode-only build (DISABLE_NVSHMEM): no RDMA buffer is needed.
++        return 0;
+ #endif
+     }
+ 
+diff --git a/deep_ep/__init__.py b/deep_ep/__init__.py
+index f09f54a..719cd19 100644
+--- a/deep_ep/__init__.py
++++ b/deep_ep/__init__.py
+@@ -3,8 +3,13 @@ import torch
+ 
+ from .utils import EventOverlap
+ from .buffer import Buffer
+-from .hybrid_ep_buffer import HybridEPBuffer
+ 
+ # noinspection PyUnresolvedReferences
+ from deep_ep_cpp import Config
+-from hybrid_ep_cpp import HybridEpConfigInstance
++
++# HybridEP is optional: builds with DEEPEP_DISABLE_HYBRID_EP=1 ship only the intranode Buffer.
++try:
++    from hybrid_ep_cpp import HybridEpConfigInstance
++    from .hybrid_ep_buffer import HybridEPBuffer
++except ImportError:
++    pass
+diff --git a/setup.py b/setup.py
+index 2fbb894..dbf3976 100644
+--- a/setup.py
++++ b/setup.py
+@@ -213,7 +213,7 @@ def get_extension_deep_ep_cpp():
+     nvshmem_host_lib = 'libnvshmem_host.so'
+     if nvshmem_dir is None:
+         try:
+-            nvshmem_dir = importlib.util.find_spec("nvidia.nvshmem").submodule_search_locations[0]
++            nvshmem_dir = importlib.util.find_spec("nvidia.nvshmem" if os.getenv("DEEPEP_DISABLE_NVSHMEM") != "1" else "nvidia._deepep_nvshmem_disabled").submodule_search_locations[0]
+             nvshmem_host_lib = get_nvshmem_host_lib_name(nvshmem_dir)
+             import nvidia.nvshmem as nvshmem
+         except (ModuleNotFoundError, AttributeError, IndexError):
+@@ -323,10 +323,8 @@ if __name__ == '__main__':
+         install_requires=[
+             'pynvml',
+         ],
+-        ext_modules=[
+-            get_extension_deep_ep_cpp(),
+-            get_extension_hybrid_ep_cpp()
+-        ],
++        ext_modules=[get_extension_deep_ep_cpp()]
++        + ([] if os.getenv("DEEPEP_DISABLE_HYBRID_EP") == "1" else [get_extension_hybrid_ep_cpp()]),
+         cmdclass={
+             'build_ext': BuildExtension
+         },

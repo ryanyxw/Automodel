@@ -1,0 +1,60 @@
+{
+ "time_utc": "2026-09-27T04:48:33Z",
+ "tflops": {
+  "0": 675.9,
+  "1": 528.0,
+  "2": 671.9,
+  "3": 661.9,
+  "4": 665.7,
+  "5": 667.9,
+  "6": 673.3,
+  "7": 678.5
+ },
+ "peak": {
+  "0": {
+   "temp": 66.0,
+   "min_clock": 1365.0,
+   "thermal": false
+  },
+  "1": {
+   "temp": 86.0,
+   "min_clock": 345.0,
+   "thermal": true
+  },
+  "2": {
+   "temp": 67.0,
+   "min_clock": 345.0,
+   "thermal": false
+  },
+  "3": {
+   "temp": 69.0,
+   "min_clock": 345.0,
+   "thermal": false
+  },
+  "4": {
+   "temp": 67.0,
+   "min_clock": 345.0,
+   "thermal": false
+  },
+  "5": {
+   "temp": 64.0,
+   "min_clock": 345.0,
+   "thermal": false
+  },
+  "6": {
+   "temp": 72.0,
+   "min_clock": 345.0,
+   "thermal": false
+  },
+  "7": {
+   "temp": 63.0,
+   "min_clock": 345.0,
+   "thermal": false
+  }
+ },
+ "problems": [
+  "GPU 1: thermal slowdown",
+  "GPU 1: reached 86 \u00b0C",
+  "GPU 1: 528 TFLOP/s vs median 672"
+ ]
+}

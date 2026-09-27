@@ -1,0 +1,211 @@
+<header class="page">
+  <div>
+    <h1>Does what fills the padding change how fast an MoE model trains?</h1>
+    <p class="meta">Nemotron 3 Nano 30B-A3B · full fine-tuning on Nemotron IF-Chat · 8× H100 · runs finished {{date}}</p>
+  </div>
+  <button id="theme-toggle" type="button">Theme: auto</button>
+</header>
+
+<p class="callout" style="margin-top:14px"><b>Status: incomplete, paused on 2026-09-27.</b> One GPU's cooling failed
+at 02:58 UTC, so every later step on this node would be slowed by that GPU. Done: the fixed-length setting (all five
+methods and the repeated default run); in the longest-in-batch setting, the default and random tokens (both passes)
+and expert placement (first pass only). Not measured yet: expert placement's second pass, natural text hidden and
+visible, and the repeated default run in the longest-in-batch setting. The numbers below use only steps run on
+healthy GPUs.</p>
+
+<div class="summary">
+<p><b>Question.</b> Conversations in a batch have different lengths, so the shorter ones are filled up with padding
+tokens. Nemotron 3 Nano's mixture-of-experts (MoE) layers compute on padding tokens like real ones, and with the
+standard padding they all go to the same few experts. Can we train faster by changing what the padding contains,
+or by moving experts between GPUs?</p>
+<p><b>Answer.</b> Yes, when padding is a large share of the tokens. With every micro-batch padded to 8,192
+tokens ({{fixed.default.pad}} of the tokens are padding), filling the padding with visible natural text cut the step
+time by {{fixed.natural_visible.abspct}}, and spreading the busy experts over the GPUs cut it by
+{{fixed.placement.abspct}}. With each micro-batch padded only to its longer conversation
+({{batchmax_pass2.default.pad}} padding), random padding tokens cut the steady-state step time by
+{{batchmax_pass2.random.abspct}}.</p>
+<ul>
+<li><b>Fixed length.</b> Default: {{fixed.default.step}} per step. Natural text, visible:
+{{fixed.natural_visible.step}} ({{fixed.natural_visible.pct}}). Expert placement: {{fixed.placement.step}}
+({{fixed.placement.pct}}). Natural text, hidden: {{fixed.natural_masked.step}} ({{fixed.natural_masked.pct}}).
+Random tokens: {{fixed.random.step}} ({{fixed.random.pct}}). Two identical default runs differed by
+{{fixed.default_repeat.pct}}.</li>
+<li><b>Why.</b> With default padding, every padding token of a micro-batch goes to the same 6 experts, so the
+busiest GPU does {{fixed.default.imb}} the average GPU's expert work and the other GPUs wait for it. Expert
+placement and visible natural text bring this down to {{fixed.placement.imb}} and {{fixed.natural_visible.imb}} and
+save the most. Random tokens and hidden natural text spread the padding only partly ({{fixed.random.imb}},
+{{fixed.natural_masked.imb}}) and save about half as much.</li>
+<li><b>Longest in batch.</b> The imbalance is milder ({{batchmax_pass2.default.imb}}). Random tokens save
+{{batchmax_pass2.random.abspct}} of the steady-state step time ({{batchmax_pass2.default.step}} →
+{{batchmax_pass2.random.step}}), and {{batchmax_pass1.random.abspct}} in the first pass, where one-time setup for new
+lengths doubles the step time. Expert placement's second pass and both natural-text methods have not been
+measured in this setting yet (GPU fault; see <a href="#caveats">Caveats</a>).</li>
+<li><b>Padding less beats every padding trick.</b> Longest-in-batch padding with the default method reaches
+{{batchmax_pass2.default.umfu}} useful MFU in steady state, more than the best fixed-length method
+({{fixed.natural_visible.umfu}}).</li>
+<li><b>Same training.</b> No method changes what the model learns: per-step losses differ from the default by at
+most {{loss.max}}, on losses between {{loss.min}} and {{loss.maxvalue}}.</li>
+</ul>
+</div>
+
+<nav class="toc"><a href="#setup">Setup</a> <a href="#results">Results</a> <a href="#why">Why it helps</a>
+<a href="#steps">Every step</a> <a href="#caveats">Caveats</a> <a href="#reproduce">Reproduce</a></nav>
+
+<h2 id="setup">Setup</h2>
+<table class="kv panel">
+<tr><td>Model</td><td>NVIDIA Nemotron 3 Nano 30B-A3B (BF16). 52 layers: 23 MoE layers, 23 Mamba layers and 6
+attention layers. Each MoE layer has 128 experts (small feed-forward networks); a router sends every token to 6 of
+them, plus one shared expert that every token uses.</td></tr>
+<tr><td>Hardware</td><td>One node with 8× H100 80 GB. Each GPU holds 16 of the 128 experts of every MoE layer
+(expert parallelism): tokens travel to the GPUs that hold their experts and back, and each MoE layer waits for the
+GPU with the most work. All other weights are split across the 8 GPUs (FSDP2).</td></tr>
+<tr><td>Training</td><td>Full-parameter fine-tuning with AutoModel. 128 conversations per optimizer step: each GPU
+runs 8 micro-batches of 2 conversations. Adam, learning rate 10<sup>−5</sup> with warm-up and cosine decay,
+activation checkpointing, loss on assistant tokens only.</td></tr>
+<tr><td>Data</td><td>{{data.rows}} conversations drawn at random from
+<a href="https://huggingface.co/datasets/nvidia/Nemotron-Instruction-Following-Chat-v1">Nemotron-Instruction-Following-Chat-v1</a>
+(split <code>chat_if</code>, {{data.source_rows}} conversations), formatted with the Nano 3 chat template and cut at
+8,192 tokens ({{data.truncated_pct}} are cut). Median length {{data.median_tokens}} tokens, mean
+{{data.mean_tokens}}; {{data.turns_mean}} user turns on average; {{data.reasoning_off_pct}} with reasoning off.</td></tr>
+<tr><td>Protocol</td><td>Every run starts from the same weights and trains on the same conversations in the same
+order, so step <i>n</i> of every run sees exactly the same data. Runs go one at a time on the same 8 GPUs. Fixed
+length: 40 steps (one pass over the data). Longest in batch: 80 steps (two passes, explained below). In each
+setting the default method runs first and again last, to measure how much two identical runs differ.</td></tr>
+</table>
+
+<h3 style="margin-top:22px">Two padding settings</h3>
+<table class="plain panel">
+<tr><th>Setting</th><th>Each micro-batch is padded to</th><th class="num">Tokens per micro-batch (per GPU)</th><th class="num">Share that is padding</th></tr>
+<tr><td>Fixed length</td><td>8,192 tokens, the longest a conversation can be</td><td class="num">16,384</td><td class="num">{{fixed.default.pad}}</td></tr>
+<tr><td>Longest in batch</td><td>the length of its longer conversation</td><td class="num">{{batchmax_pass2.default.mbtokens}} on average</td><td class="num">{{batchmax_pass2.default.pad}}</td></tr>
+</table>
+<p class="note">With longest-in-batch padding, micro-batch lengths vary. The first time a GPU sees a length, some
+kernels (attention in particular) build an execution plan for it. In the first pass over the data,
+{{batchmax_pass1.newlen}} of micro-batches have a length their GPU has not seen before, and a default step takes
+{{batchmax_pass1.default.step}}. The second pass over the same data reuses the plans and takes
+{{batchmax_pass2.default.step}}. The second pass shows the steady state of a long run; the first pass shows its
+start.</p>
+
+<h3>Five padding methods</h3>
+<table class="plain panel">
+<tr><th>Method</th><th>What the padding positions hold</th><th>Seen by attention and Mamba?</th></tr>
+<tr><td>Default</td><td>The token <code>&lt;|im_end|&gt;</code>, repeated (AutoModel's standard padding)</td><td>No</td></tr>
+<tr><td>Random tokens</td><td>A random ordinary token at each position</td><td>No</td></tr>
+<tr><td>Expert placement</td><td><code>&lt;|im_end|&gt;</code>, as in Default. In addition, each MoE layer's experts are
+rearranged across the 8 GPUs so that the heavily used ones sit on different GPUs.</td><td>No</td></tr>
+<tr><td>Natural text, hidden</td><td>A random stretch of text from other IF-Chat conversations ({{data.filler_rows}}
+conversations that are not in the training set)</td><td>No</td></tr>
+<tr><td>Natural text, visible</td><td>The same text</td><td>Yes</td></tr>
+</table>
+<p class="note">Padding never counts toward the loss, and it always comes after the real tokens. Attention only
+looks backward, so real tokens never see the padding, even when it is visible. Every method therefore trains the
+same model on the same loss: the largest per-step loss difference from the default is {{loss.max}}. Expert
+placement only changes which GPU holds which expert, not what the model computes. It was computed from the
+default run's expert usage on this same data, so it is a best case (see <a href="#caveats">Caveats</a>).</p>
+
+<h3>Why padding can slow training down</h3>
+<p>The MoE layers of Nemotron 3 Nano do not skip padding: the router picks 6 experts for every padding token, and
+those experts compute on it. Hidden padding tokens do not mix with any other token, so each one reaches the router
+carrying only its own token. When every padding token is the same token, all of them are routed to the same 6
+experts. The GPUs holding those experts get far more work than the others, and every MoE layer waits for them. The
+methods attack this in three ways: make padding tokens differ from each other (random tokens, natural text
+hidden), let padding read like normal text (natural text visible), or spread the busy experts over more GPUs
+(expert placement).</p>
+
+<h3>How we measure</h3>
+<ul>
+<li><b>Step time</b>: wall-clock time of one optimizer step (8 micro-batches forward and backward, plus the
+update). The first 2 steps of each pass are left out because they include one-time setup.</li>
+<li><b>Useful MFU</b> (model FLOPs utilization): the model's arithmetic for the real tokens only, divided by the
+step time and by the 8 GPUs' peak BF16 throughput (989 TFLOP/s each). Padding counts as zero useful work.
+<b>Padded MFU</b> also counts padding tokens as work; it is the number AutoModel reports by default.</li>
+<li><b>Busiest GPU's expert work</b>: in each MoE layer and micro-batch, the token-to-expert assignments handled by
+the busiest GPU divided by the average GPU, averaged over layers and micro-batches. 1.0 is perfectly even; 8.0
+would mean one GPU does all the expert work.</li>
+<li><b>Comparison</b>: every run sees the same data at every step, so each method is compared with the default
+run at the same steps. We report the mean of these per-step differences with a 95% confidence interval.</li>
+</ul>
+
+<h2 id="results">Results</h2>
+<div data-chart="effect"></div>
+<p class="figcaption">Each dot is a method's mean change in step time relative to the default method, over the
+same steps with the same data. Whiskers are 95% confidence intervals; a whisker that crosses zero means no
+detectable change. "Default, second run" repeats the default method and shows how much identical runs differ.
+The right-hand column gives the default's step time and the method's.</p>
+
+<h3>All numbers</h3>
+{{RESULTS_TABLE}}
+<p class="note">Change vs default: mean per-step difference with its 95% interval. Busiest GPU's expert work:
+average over MoE layers and micro-batches; "worst" is the single most uneven layer and micro-batch. Peak memory:
+the fullest GPU.</p>
+
+<div data-chart="mfu"></div>
+<p class="figcaption">Useful MFU (higher is better). Within a setting every run processes the same data, so
+useful MFU moves opposite to step time. Across settings it shows the larger lever: with fixed-length padding,
+{{fixed.default.pad}} of the processed tokens are padding, and even the best method reaches
+{{fixed.natural_visible.umfu}}. Padding each micro-batch only to its longer conversation reaches
+{{batchmax_pass2.default.umfu}} with default padding in the second pass, but only {{batchmax_pass1.default.umfu}}
+in the first pass, while kernels are still being set up for new lengths.</p>
+
+<h2 id="why">Why the methods help: how evenly the expert work is spread</h2>
+<div data-chart="imbalance"></div>
+<p class="figcaption">For each MoE layer and micro-batch: the expert work of the busiest GPU divided by the
+average GPU's, then averaged. The dashed line is a perfectly even split. With default padding, all padding tokens of
+a micro-batch go to the same 6 experts: {{fixed.default.top6}} of their expert assignments land on the 6 most used
+experts of each layer, against {{fixed.default.realtop6}} for real tokens. Random tokens and hidden natural text
+spread the padding over more experts ({{fixed.random.top6}} and {{fixed.natural_masked.top6}} on the top 6).
+Expert placement keeps the 6 busy experts but puts them on 6 different GPUs. Visible natural text is routed like
+real text ({{fixed.natural_visible.top6}} on the top 6).</p>
+
+<h3>Where the expert work goes, fixed length (steps 3–40)</h3>
+<div class="grid3">
+<div data-chart="work_default"></div>
+<div data-chart="work_random"></div>
+<div data-chart="work_placement"></div>
+<div data-chart="work_natural_masked"></div>
+<div data-chart="work_natural_visible"></div>
+</div>
+<p class="figcaption">Each row is one MoE layer and each column one GPU. The color is the share of that layer's
+expert work (real and padding tokens together) that the GPU handled over steps 3–40; an even split is 12.5% per cell.
+<b>Default</b>: in the median layer the busiest GPU handles {{heat.default.maxshare}} of the work (up to
+{{heat.default.maxsharetop}}) and the least busy {{heat.default.minshare}}. The dark cells are the GPUs holding the
+experts that all padding goes to. <b>Random tokens</b> and <b>natural text, hidden</b> lighten these hot spots
+but keep them. <b>Expert placement</b> gives each busy padding expert its own GPU (GPUs 0–5 in most layers), so six
+columns share the padding and GPUs 6 and 7 get mostly real tokens. <b>Natural text, visible</b> spreads the
+work almost evenly (busiest GPU {{heat.natural_visible.maxshare}} in the median layer).</p>
+
+<h2 id="steps">Step time at every step</h2>
+<div data-chart="steps_fixed"></div>
+<div data-chart="steps_batchmax"></div>
+<p class="figcaption">Step time at every step of every run. <b>(a) Fixed length</b>: after step 1 (about 40 s
+of one-time setup, not shown) the curves are flat and keep their order, and the second default run lies on top of
+the first. <b>(b) Longest in batch</b>: steps 1–40 (shaded) are the first pass, where
+{{batchmax_pass1.newlen}} of micro-batches have a length their GPU has not seen before and steps take about twice as
+long; steps 41–80 repeat the same data. Step times vary with the conversation lengths in each step, which is why
+methods are compared step by step on the same data.</p>
+
+<h2 id="caveats">Caveats</h2>
+<ul class="caveats">
+<li>Expert placement was computed from the default run's expert usage on the same data it was then tested on.
+That makes it a best case. A real system would have to plan from earlier batches and would miss some changes.</li>
+<li>One run per method. Two identical default runs differed by {{fixed.default_repeat.pct2}}
+({{fixed.default_repeat.ci2}}) in the fixed-length setting, far less than any method's effect there.</li>
+<li>At 02:58 UTC one GPU's cooling failed: under load it ran at 85–91 °C and throttled to about 60% of its normal
+speed, which slows every step. Steps that overlap the overheating are left out of all numbers (runs table below).
+The experiment is paused until the GPU is repaired. Still to run in the longest-in-batch setting: expert
+placement (both passes again), natural text hidden and visible, and the repeated default run, about 1.5 hours.
+Each run now starts only after a 20-second load test of every GPU passes.</li>
+<li>One node, 8 GPUs, 2 conversations per GPU per micro-batch. The gains depend on how much of each step is expert
+work and how uneven that work is. More padding per micro-batch makes the methods matter more.</li>
+<li>These are short runs (40 and 80 steps) that measure speed, not model quality. The training loss is the same for
+every method by construction.</li>
+</ul>
+
+<h2 id="reproduce">Reproduce</h2>
+<pre>bash experiments/main-v1/run_all.sh          # data, checks, all runs in order, this report
+bash experiments/main-v1/run_one.sh fixed_random fixed_random   # a single run
+python experiments/main-v1/make_report.py    # rebuild this report from experiments/main-v1/runs/</pre>
+<p class="note">Code, configs and per-run outputs (every metric per step, router counts per micro-batch, GPU
+telemetry) are in <code>experiments/main-v1/</code>; see its README. Metrics are also in wandb, project
+<code>main-v1</code>.</p>
+{{RUNS_TABLE}}

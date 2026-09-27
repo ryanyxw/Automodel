@@ -1,0 +1,3 @@
+# Sampled IF-Chat data: prepare_data.py recreates it exactly (pinned dataset revision and seed).
+data/*.jsonl
+data/filler.npy

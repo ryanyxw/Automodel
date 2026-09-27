@@ -1,0 +1,77 @@
+{
+  "source": {
+    "repo": "nvidia/Nemotron-Instruction-Following-Chat-v1",
+    "file": "data/chat_if.jsonl",
+    "revision": "83dcd3aded0d289b0bbc018d3f9af4c5dd4005df",
+    "rows": 426009
+  },
+  "seed": 20260927,
+  "rows_examined": 8192,
+  "rows_rejected": {},
+  "dataset_fields": {
+    "path_or_dataset_id": "experiments/main-v1/data/train.jsonl",
+    "chat_template": "experiments/main-v1/templates/nano3_generation.jinja",
+    "seq_length": 8192,
+    "truncation": true,
+    "padding": "do_not_pad"
+  },
+  "train": {
+    "rows": 5120,
+    "reasoning": {
+      "on": 1821,
+      "off": 3299
+    },
+    "capability_target": {
+      "chat": 4092,
+      "instruction_following": 1028
+    },
+    "turns_user": {
+      "mean": 3.2990234375,
+      "p10": 1.0,
+      "p25": 2.0,
+      "p50": 3.0,
+      "p75": 4.0,
+      "p90": 7.0,
+      "p99": 10.0,
+      "max": 10.0
+    },
+    "tokens": {
+      "mean": 3364.0708984375,
+      "p10": 664.9000000000001,
+      "p25": 1179.75,
+      "p50": 2392.0,
+      "p75": 5346.25,
+      "p90": 8191.0,
+      "p99": 8191.0,
+      "max": 8191.0
+    },
+    "tokens_untruncated": {
+      "mean": 3841.45625,
+      "p10": 664.9000000000001,
+      "p25": 1179.75,
+      "p50": 2392.0,
+      "p75": 5346.25,
+      "p90": 8937.2,
+      "p99": 17557.670000000002,
+      "max": 42522.0
+    },
+    "label_tokens": {
+      "mean": 2992.685546875,
+      "p10": 520.9000000000001,
+      "p25": 995.0,
+      "p50": 2104.5,
+      "p75": 4735.5,
+      "p90": 7254.1,
+      "p99": 7906.240000000002,
+      "max": 8086.0
+    },
+    "truncated_share": 0.121484375,
+    "seq_length": 8192,
+    "total_tokens": 17224043
+  },
+  "filler": {
+    "rows": 1755,
+    "tokens": 6005053,
+    "distinct_ids": 61692
+  }
+}

@@ -1,0 +1,362 @@
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+cfg-path: /home/elwin/Automodel/experiments/derisk-v2/configs/v23b_pad_fixed8192_natural_visible.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v2/configs/v23b_pad_fixed8192_natural_visible.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v2/configs/v23b_pad_fixed8192_natural_visible.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v2/configs/v23b_pad_fixed8192_natural_visible.yamlcfg-path: /home/elwin/Automodel/experiments/derisk-v2/configs/v23b_pad_fixed8192_natural_visible.yaml
+
+cfg-path: /home/elwin/Automodel/experiments/derisk-v2/configs/v23b_pad_fixed8192_natural_visible.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v2/configs/v23b_pad_fixed8192_natural_visible.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v2/configs/v23b_pad_fixed8192_natural_visible.yaml
+> initializing torch distributed with 8 workers.
+2026-09-26 22:03:08 | INFO | nemo_automodel.components.loggers.log_utils | Setting logging level to 20
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+2026-09-26 22:03:09 | INFO | root | 🚀 View run at https://wandb.ai/helloelwin/derisk-v2/runs/l9t629pj
+2026-09-26 22:03:09 | INFO | root | Experiment_details:
+2026-09-26 22:03:09 | INFO | root | Timestamp: '2026-09-26T22:03:09'
+2026-09-26 22:03:09 | INFO | root | User: elwin
+2026-09-26 22:03:09 | INFO | root | Host: instance-20260127-8
+2026-09-26 22:03:09 | INFO | root | World size: 8
+2026-09-26 22:03:09 | INFO | root | Backend: nccl
+2026-09-26 22:03:09 | INFO | root | Recipe: PlacedPaddingProbeRecipe
+2026-09-26 22:03:09 | INFO | root | Model name: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+recipe: TrainFinetuneRecipeForNextTokenPrediction
+step_scheduler:
+  global_batch_size: 128
+  local_batch_size: 2
+  max_steps: 20
+  ckpt_every_steps: 1000000
+  val_every_steps: 1000000
+  gc_every_steps: 10
+dist_env:
+  backend: nccl
+  timeout_minutes: 30
+rng:
+  _target_: nemo_automodel.components.training.rng.StatefulRNG
+  seed: 1111
+  ranked: true
+model:
+  _target_: nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained
+  pretrained_model_name_or_path: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  trust_remote_code: true
+  output_hidden_states: true
+  backend:
+    _target_: nemo_automodel.components.models.common.BackendConfig
+    attn: te
+    linear: te
+    rms_norm: torch_fp32
+    experts: torch_mm
+    dispatcher: deepep
+    fake_balanced_gate: false
+    enable_hf_state_dict_adapter: true
+checkpoint:
+  enabled: false
+  checkpoint_dir: experiments/derisk-v2/runs/v23b_pad_fixed8192_natural_visible/checkpoint
+distributed:
+  strategy: fsdp2
+  tp_size: 1
+  cp_size: 1
+  pp_size: 1
+  ep_size: 8
+  sequence_parallel: false
+  activation_checkpointing: true
+loss_fn:
+  _target_: nemo_automodel.components.loss.linear_ce.FusedLinearCrossEntropy
+dataset:
+  _target_: nemo_automodel.components.datasets.llm.chat_dataset.ChatDataset
+  path_or_dataset_id: allenai/tulu-3-sft-mixture
+  split: train[:2560]
+  shuffle_seed: 42
+  seq_length: 4096
+  truncation: true
+  padding: do_not_pad
+packed_sequence:
+  packed_sequence_size: 0
+dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  shuffle: false
+  num_workers: 4
+  collate_fn:
+    _target_: natural_pad.natural_pad_collater
+    pad_seq_len_divisible: 8192
+    filler_path: experiments/derisk-v2/filler/tulu3_train_2560_10560.npy
+    visible: true
+    seed: 1234
+optimizer:
+  _target_: transformer_engine.pytorch.optimizers.fused_adam.FusedAdam
+  betas:
+  - 0.9
+  - 0.95
+  eps: 1.0e-08
+  lr: 1.0e-05
+  weight_decay: 0
+  master_weights: true
+  store_param_remainders: true
+  exp_avg_dtype: torch.bfloat16
+  exp_avg_sq_dtype: torch.bfloat16
+lr_scheduler:
+  lr_decay_style: cosine
+  min_lr: 1.0e-06
+mfu:
+  peak_tflops: 989
+wandb:
+  project: derisk-v2
+  group: v2.3-natural-pad
+  name: v23b_pad_fixed8192_natural_visible
+  tags:
+  - nemotron-nano-3
+  - tulu3
+  - padding
+  - mfu
+  - ep8
+  dir: experiments/derisk-v2/runs/v23b_pad_fixed8192_natural_visible
+probe:
+  output_dir: experiments/derisk-v2/runs/v23b_pad_fixed8192_natural_visible
+  pad_distance_edges:
+  - 1
+  - 8
+  - 64
+  - 512
+  - 4096
+  nsys_start_step: -1
+  nsys_end_step: -1
+  nsys_ranks:
+  - 0
+2026-09-26 22:03:09 | INFO | root | Library versions:
+2026-09-26 22:03:09 | INFO | root | - nemo_automodel: 0.7.0+0f38dfd2 (/home/elwin/Automodel/nemo_automodel/__init__.py)
+2026-09-26 22:03:09 | INFO | root | - transformers: 5.15.1 (/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/transformers/__init__.py)
+2026-09-26 22:03:09 | INFO | root | - torch: 2.10.0+cu128 CUDA 12.8
+2026-09-26 22:03:09 | WARNING | root | save_consolidated=final but v4_compatible=False; checkpoint assets may be not compatible with transformers v4; [experimental] set --checkpoint.v4_compatible=True to enable
+2026-09-26 22:03:09 | INFO | root | No clip_grad_norm.max_norm specified in config, using default value of 1.0
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+2026-09-26 22:03:09 | WARNING | nemo_automodel.components.models.common.utils | rope_fusion is temporarily force-disabled globally (see #3027).
+2026-09-26 22:03:10 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:10 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:10 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:10 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:10 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:10 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 22:03:10 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:10 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:11 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:11 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:11 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:11 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 22:03:11 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:11 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:11 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:11 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:12 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:12 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:12 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:12 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 22:03:12 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:12 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:12 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:12 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:13 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:13 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:13 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:13 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 22:03:13 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:13 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:13 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/revision/main "HTTP/1.1 200 OK"
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 33539.10it/s]
+[Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : [Gloo] Rank 7
+5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank [Gloo] Rank 42 is connected to  is connected to 77 peer ranks.  peer ranks. Expected number of connected peer ranks is : Expected number of connected peer ranks is : 77
+
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+2026-09-26 22:03:13 | INFO | nemo_automodel._transformers.model_init | Using custom model implementation for NemotronHForCausalLM
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] The following generation flags are not valid and may be ignored: ['output_hidden_states']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 25341.04it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 40811.97it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 258907.65it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 23889.45it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 126552.28it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 29395.40it/s]
+Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 30318.18it/s]
+2026-09-26 22:03:14 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/generation_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:14 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/generation_config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:14 | INFO | nemo_automodel._transformers.kernel_patches | Set global SDPA backends to [<SDPBackend.FLASH_ATTENTION: 1>, <SDPBackend.EFFICIENT_ATTENTION: 2>, <SDPBackend.MATH: 0>]
+2026-09-26 22:03:14 | INFO | nemo_automodel._transformers.kernel_patches | Patched model with SDPA method= [<SDPBackend.FLASH_ATTENTION: 1>, <SDPBackend.EFFICIENT_ATTENTION: 2>, <SDPBackend.MATH: 0>]
+2026-09-26 22:03:22 | INFO | root | load_model: 10.94 GB loaded in 4.58s (2.39 GB/s overall | destinations 0.03s, storage read 4.50s, adapt 0.01s, install 0.04s)
+2026-09-26 22:03:23 | INFO | root | Model summary:
+2026-09-26 22:03:23 | INFO | root | --------------------------------
+2026-09-26 22:03:23 | INFO | root | Trainable parameters: 31,577,937,344
+2026-09-26 22:03:23 | INFO | root | Total parameters: 31,577,937,344
+2026-09-26 22:03:23 | INFO | root | Trainable parameters percentage: 100.00%
+2026-09-26 22:03:23 | INFO | root | Param L2 norm: 1525.2960
+2026-09-26 22:03:23 | INFO | root | --------------------------------
+2026-09-26 22:03:23 | INFO | root | Using model config to instantiate tokenizer
+2026-09-26 22:03:23 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:23 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:23 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:23 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 22:03:24 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:24 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:24 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:24 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:24 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:24 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 22:03:24 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:24 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:25 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:25 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-09-26 22:03:25 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-09-26 22:03:25 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-09-26 22:03:26 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 "HTTP/1.1 200 OK"
+2026-09-26 22:03:26 | WARNING | nemo_automodel._transformers.tokenization.nemo_auto_tokenizer | Tokenizer 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16' has pad_token_id=None; defaulting to 0. This can cause incorrect MoE auxiliary loss calculations if valid tokens share token ID 0. Set pad_token_id explicitly in your tokenizer config to avoid this.
+2026-09-26 22:03:27 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 22:03:27 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/allenai/tulu-3-sft-mixture/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/README.md "HTTP/1.1 200 OK"
+2026-09-26 22:03:27 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/resolve/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/tulu-3-sft-mixture.py "HTTP/1.1 404 Not Found"
+2026-09-26 22:03:28 | INFO | httpx | HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/allenai/tulu-3-sft-mixture/allenai/tulu-3-sft-mixture.py "HTTP/1.1 404 Not Found"
+2026-09-26 22:03:28 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/datasets/allenai/tulu-3-sft-mixture/revision/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be "HTTP/1.1 200 OK"
+2026-09-26 22:03:28 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/resolve/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-09-26 22:03:28 | INFO | httpx | HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=allenai/tulu-3-sft-mixture "HTTP/1.1 200 OK"
+2026-09-26 22:03:29 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/datasets/allenai/tulu-3-sft-mixture/tree/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-09-26 22:03:29 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/datasets/allenai/tulu-3-sft-mixture/tree/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be?recursive=false&expand=false "HTTP/1.1 200 OK"
+2026-09-26 22:03:29 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/resolve/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/dataset_infos.json "HTTP/1.1 404 Not Found"
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 6 is connected to [Gloo] Rank 7 peer ranks. Expected number of connected peer ranks is : 7
+3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+2026-09-26 22:03:29 | INFO | root | Signal handler installed for SIGTERM
+2026-09-26 22:03:29 | INFO | nemo_automodel.components.training.garbage_collection | [GC] Initial GC collection took 0.00 seconds
+2026-09-26 22:03:29 | INFO | nemo_automodel.components.optim.scheduler | learning rate decay style: cosine
+2026-09-26 22:03:29 | INFO | nemo_automodel.components.optim.optimizer | Building LR scheduler with total_steps=20, warmup_steps=2, decay_style=cosine
+2026-09-26 22:03:29 | INFO | root | Model Part 0:
+2026-09-26 22:03:29 | INFO | root | FSDPNemotronHForCausalLM(
+2026-09-26 22:03:29 | INFO | root |   (model): FSDPNemotronV3Model(
+2026-09-26 22:03:29 | INFO | root |     (embed_tokens): FSDPEmbedding(131072, 2688)
+2026-09-26 22:03:29 | INFO | root |     (layers): ModuleDict(
+2026-09-26 22:03:29 | INFO | root |       (0): FSDPCheckpointWrapper(
+2026-09-26 22:03:29 | INFO | root |         (_checkpoint_wrapped_module): NemotronV3Block(
+2026-09-26 22:03:29 | INFO | root |           (norm): Float32RMSNorm()
+2026-09-26 22:03:29 | INFO | root |           (mixer): NemotronV3Mamba2Mixer(
+2026-09-26 22:03:29 | INFO | root |             (in_proj): Linear(in_features=2688, out_features=10304, bias=False)
+2026-09-26 22:03:29 | INFO | root |             (conv1d): Conv1d(6144, 6144, kernel_size=(4,), stride=(1,), padding=(3,), groups=6144)
+2026-09-26 22:03:29 | INFO | root |             (_fp32_params): FSDPNemotronV3MambaFP32Params()
+2026-09-26 22:03:29 | INFO | root |             (norm): NemotronV3MambaRMSNormGated()
+2026-09-26 22:03:29 | INFO | root |             (out_proj): Linear(in_features=4096, out_features=2688, bias=False)
+2026-09-26 22:03:29 | INFO | root |           )
+2026-09-26 22:03:29 | INFO | root |         )
+2026-09-26 22:03:29 | INFO | root |       )
+2026-09-26 22:03:29 | INFO | root |       (1): FSDPCheckpointWrapper(
+2026-09-26 22:03:29 | INFO | root |         (_checkpoint_wrapped_module): NemotronV3Block(
+2026-09-26 22:03:29 | INFO | root |           (norm): Float32RMSNorm()
+2026-09-26 22:03:29 | INFO | root |           (mixer): MoE(
+2026-09-26 22:03:29 | INFO | root |             (gate): Gate(
+2026-09-26 22:03:29 | INFO | root |               (routing_core): _GateRoutingCore()
+2026-09-26 22:03:29 | INFO | root |             )
+2026-09-26 22:03:29 | INFO | root |             (experts): GroupedExpertsDeepEP()
+2026-09-26 22:03:29 | INFO | root |             (shared_experts): MLP(
+2026-09-26 22:03:29 | INFO | root |               (up_proj): Linear()
+2026-09-26 22:03:29 | INFO | root |               (down_proj): Linear()
+2026-09-26 22:03:29 | INFO | root |             )
+2026-09-26 22:03:29 | INFO | root |           )
+2026-09-26 22:03:29 | INFO | root |         )
+2026-09-26 22:03:29 | INFO | root |       )
+2026-09-26 22:03:29 | INFO | root |       (2): FSDPCheckpointWrapper(
+2026-09-26 22:03:29 | INFO | root |         (_checkpoint_wrapped_module): NemotronV3Block(
+2026-09-26 22:03:29 | INFO | root |           (norm): Float32RMSNorm()
+2026-09-26 22:03:29 | INFO | root |           (mixer): NemotronV3Mamba2Mixer(
+2026-09-26 22:03:29 | INFO | root |             (in_proj): Linear(in_features=2688, out_features=10304, bias=False)
+2026-09-26 22:03:29 | INFO | root |             (conv1d): Conv1d(6144, 6144, kernel_size=(4,), stride=(1,), padding=(3,), groups=6144)
+2026-09-26 22:03:29 | INFO | root |             (_fp32_params): FSDPNemotronV3MambaFP32Params()
+2026-09-26 22:03:29 | INFO | root |             (norm): NemotronV3MambaRMSNormGated()
+2026-09-26 22:03:29 | INFO | root |             (out_proj): Linear(in_features=4096, out_features=2688, bias=False)
+2026-09-26 22:03:29 | INFO | root | ...
+2026-09-26 22:03:29 | INFO | root | Optimizer:
+2026-09-26 22:03:29 | INFO | root | FusedAdam (
+2026-09-26 22:03:29 | INFO | root | Parameter Group 0
+2026-09-26 22:03:29 | INFO | root |     betas: [0.9, 0.95]
+2026-09-26 22:03:29 | INFO | root |     bias_correction: True
+2026-09-26 22:03:29 | INFO | root |     eps: 1e-08
+2026-09-26 22:03:29 | INFO | root |     lr: 1.0000000000000002e-06
+2026-09-26 22:03:29 | INFO | root |     weight_decay: 0.0
+2026-09-26 22:03:29 | INFO | root | )
+2026-09-26 22:03:29 | INFO | root | LR scheduler:
+2026-09-26 22:03:29 | INFO | root | OptimizerParamScheduler(
+2026-09-26 22:03:29 | INFO | root |     optimizer: FusedAdam
+2026-09-26 22:03:29 | INFO | root |     learning_rate:
+2026-09-26 22:03:29 | INFO | root |         init_lr: 1.0000000000000002e-06
+2026-09-26 22:03:29 | INFO | root |         max_lr: 1e-05
+2026-09-26 22:03:29 | INFO | root |         min_lr: 1e-06
+2026-09-26 22:03:29 | INFO | root |         warmup_steps: 2
+2026-09-26 22:03:29 | INFO | root |         decay_steps: 20
+2026-09-26 22:03:29 | INFO | root |         decay_style: cosine
+2026-09-26 22:03:29 | INFO | root |     weight_decay:
+2026-09-26 22:03:29 | INFO | root |         start_wd: 0
+2026-09-26 22:03:29 | INFO | root |         end_wd: 0
+2026-09-26 22:03:29 | INFO | root |         incr_steps: 20
+2026-09-26 22:03:29 | INFO | root |         incr_style: constant
+2026-09-26 22:03:29 | INFO | root |     current_step: 0
+2026-09-26 22:03:29 | INFO | root | )
+2026-09-26 22:03:29 | INFO | root | Step scheduler:
+2026-09-26 22:03:29 | INFO | root | - Gradient accumulation steps: 8
+2026-09-26 22:03:29 | INFO | root | - Checkpoint every steps: 1000000
+2026-09-26 22:03:29 | INFO | root | - Garbage collect every steps: 10
+2026-09-26 22:03:29 | INFO | root | - Current Epoch: 0
+2026-09-26 22:03:29 | INFO | root | - Number of epochs: 10
+2026-09-26 22:03:29 | INFO | root | - Validation every steps: 1000000
+2026-09-26 22:03:29 | INFO | root | - Max train steps: 20
+2026-09-26 22:03:29 | INFO | root | - Checkpoint retention: inactive because checkpointing is disabled
+2026-09-26 22:03:29 | INFO | padding_probe | RoutingProbe hooked 23 MoE routers (layers [1, 3, 6, 8, 10, 13, 15, 17, 20, 22, 24, 27, 29, 31, 34, 36, 38, 40, 43, 45, 47, 49, 51]), 128 experts, top-6, EP=8
+Training:   0%|          | 0/20 [00:00<?, ?step/s]Current triton version: 3.6.0, Required triton version: 3.2.0Current triton version: 3.6.0, Required triton version: 3.2.0Current triton version: 3.6.0, Required triton version: 3.2.0
+
+
+Current triton version: 3.6.0, Required triton version: 3.2.0
+Current triton version: 3.6.0, Required triton version: 3.2.0Current triton version: 3.6.0, Required triton version: 3.2.0
+
+Current triton version: 3.6.0, Required triton version: 3.2.0
+Current triton version: 3.6.0, Required triton version: 3.2.0
+2026-09-26 22:04:09 | INFO | root | step 0 | epoch 0 | loss 0.9012 | grad_norm 2.8008 | lr 5.50e-06 | mem 39.30 GiB | tps 2210.86(276.36/gpu) | num_label_tokens 60803
+Training:   0%|          | 0/20 [00:37<?, ?step/s, loss=0.9012, lr=5.50e-06, tps=2211]Training:   5%|▌         | 1/20 [00:37<11:59, 37.86s/step, loss=0.9012, lr=5.50e-06, tps=2211]2026-09-26 22:04:20 | INFO | root | step 1 | epoch 0 | loss 0.9883 | grad_norm 3.1210 | lr 1.00e-05 | mem 59.09 GiB | tps 8023.45(1002.93/gpu) | num_label_tokens 55694
+Training:   5%|▌         | 1/20 [00:48<11:59, 37.86s/step, loss=0.9883, lr=1.00e-05, tps=8023]Training:  10%|█         | 2/20 [00:48<06:35, 22.00s/step, loss=0.9883, lr=1.00e-05, tps=8023]2026-09-26 22:04:30 | INFO | root | step 2 | epoch 0 | loss 0.8945 | grad_norm 2.8438 | lr 9.93e-06 | mem 59.16 GiB | tps 8065.77(1008.22/gpu) | num_label_tokens 55561
+Training:  10%|█         | 2/20 [00:59<06:35, 22.00s/step, loss=0.8945, lr=9.93e-06, tps=8066]Training:  15%|█▌        | 3/20 [00:59<04:44, 16.76s/step, loss=0.8945, lr=9.93e-06, tps=8066]2026-09-26 22:04:41 | INFO | root | step 3 | epoch 0 | loss 0.9121 | grad_norm 2.1267 | lr 9.73e-06 | mem 59.06 GiB | tps 7914.80(989.35/gpu) | num_label_tokens 61691
+Training:  15%|█▌        | 3/20 [01:09<04:44, 16.76s/step, loss=0.9121, lr=9.73e-06, tps=7915]Training:  20%|██        | 4/20 [01:09<03:49, 14.33s/step, loss=0.9121, lr=9.73e-06, tps=7915]2026-09-26 22:04:51 | INFO | root | step 4 | epoch 0 | loss 0.7885 | grad_norm 1.7113 | lr 9.40e-06 | mem 59.18 GiB | tps 9434.69(1179.34/gpu) | num_label_tokens 70795
+Training:  20%|██        | 4/20 [01:20<03:49, 14.33s/step, loss=0.7885, lr=9.40e-06, tps=9435]Training:  25%|██▌       | 5/20 [01:20<03:14, 12.99s/step, loss=0.7885, lr=9.40e-06, tps=9435]2026-09-26 22:05:02 | INFO | root | step 5 | epoch 0 | loss 0.9102 | grad_norm 1.2979 | lr 8.95e-06 | mem 59.17 GiB | tps 8159.00(1019.87/gpu) | num_label_tokens 66296
+Training:  25%|██▌       | 5/20 [01:31<03:14, 12.99s/step, loss=0.9102, lr=8.95e-06, tps=8159]Training:  30%|███       | 6/20 [01:31<02:50, 12.19s/step, loss=0.9102, lr=8.95e-06, tps=8159]2026-09-26 22:05:13 | INFO | root | step 6 | epoch 0 | loss 0.8472 | grad_norm 1.2834 | lr 8.39e-06 | mem 59.15 GiB | tps 8566.79(1070.85/gpu) | num_label_tokens 61671
+Training:  30%|███       | 6/20 [01:41<02:50, 12.19s/step, loss=0.8472, lr=8.39e-06, tps=8567]Training:  35%|███▌      | 7/20 [01:41<02:31, 11.67s/step, loss=0.8472, lr=8.39e-06, tps=8567]2026-09-26 22:05:23 | INFO | root | step 7 | epoch 0 | loss 0.7784 | grad_norm 1.1511 | lr 7.75e-06 | mem 59.16 GiB | tps 8425.99(1053.25/gpu) | num_label_tokens 67996
+Training:  35%|███▌      | 7/20 [01:52<02:31, 11.67s/step, loss=0.7784, lr=7.75e-06, tps=8426]Training:  40%|████      | 8/20 [01:52<02:16, 11.36s/step, loss=0.7784, lr=7.75e-06, tps=8426]2026-09-26 22:05:34 | INFO | root | step 8 | epoch 0 | loss 0.7196 | grad_norm 1.0132 | lr 7.04e-06 | mem 59.19 GiB | tps 8225.53(1028.19/gpu) | num_label_tokens 57137
+Training:  40%|████      | 8/20 [02:02<02:16, 11.36s/step, loss=0.7196, lr=7.04e-06, tps=8226]Training:  45%|████▌     | 9/20 [02:02<02:02, 11.10s/step, loss=0.7196, lr=7.04e-06, tps=8226]2026-09-26 22:05:44 | INFO | root | step 9 | epoch 0 | loss 0.8014 | grad_norm 1.1112 | lr 6.28e-06 | mem 59.16 GiB | tps 8560.24(1070.03/gpu) | num_label_tokens 62393
+Training:  45%|████▌     | 9/20 [02:13<02:02, 11.10s/step, loss=0.8014, lr=6.28e-06, tps=8560]Training:  50%|█████     | 10/20 [02:13<01:49, 10.96s/step, loss=0.8014, lr=6.28e-06, tps=8560]2026-09-26 22:05:55 | INFO | root | step 10 | epoch 0 | loss 0.8674 | grad_norm 1.3065 | lr 5.50e-06 | mem 59.18 GiB | tps 7493.07(936.63/gpu) | num_label_tokens 50561
+Training:  50%|█████     | 10/20 [02:24<01:49, 10.96s/step, loss=0.8674, lr=5.50e-06, tps=7493]Training:  55%|█████▌    | 11/20 [02:24<01:37, 10.83s/step, loss=0.8674, lr=5.50e-06, tps=7493]2026-09-26 22:05:55 | INFO | nemo_automodel.components.training.garbage_collection | [GC] Performing periodic GC collection took 0.24 seconds
+2026-09-26 22:06:06 | INFO | root | step 11 | epoch 0 | loss 0.5847 | grad_norm 1.0090 | lr 4.72e-06 | mem 57.02 GiB | tps 6811.45(851.43/gpu) | num_label_tokens 52278
+Training:  55%|█████▌    | 11/20 [02:34<01:37, 10.83s/step, loss=0.5847, lr=4.72e-06, tps=6811]Training:  60%|██████    | 12/20 [02:34<01:26, 10.82s/step, loss=0.5847, lr=4.72e-06, tps=6811]2026-09-26 22:06:16 | INFO | root | step 12 | epoch 0 | loss 0.6877 | grad_norm 1.0140 | lr 3.96e-06 | mem 57.02 GiB | tps 8096.10(1012.01/gpu) | num_label_tokens 59263
+Training:  60%|██████    | 12/20 [02:45<01:26, 10.82s/step, loss=0.6877, lr=3.96e-06, tps=8096]Training:  65%|██████▌   | 13/20 [02:45<01:15, 10.74s/step, loss=0.6877, lr=3.96e-06, tps=8096]2026-09-26 22:06:27 | INFO | root | step 13 | epoch 0 | loss 0.7728 | grad_norm 1.0197 | lr 3.25e-06 | mem 57.07 GiB | tps 8276.93(1034.62/gpu) | num_label_tokens 60410
+Training:  65%|██████▌   | 13/20 [02:56<01:15, 10.74s/step, loss=0.7728, lr=3.25e-06, tps=8277]Training:  70%|███████   | 14/20 [02:56<01:04, 10.69s/step, loss=0.7728, lr=3.25e-06, tps=8277]2026-09-26 22:06:37 | INFO | root | step 14 | epoch 0 | loss 0.6680 | grad_norm 0.7640 | lr 2.61e-06 | mem 57.03 GiB | tps 8551.06(1068.88/gpu) | num_label_tokens 65094
+Training:  70%|███████   | 14/20 [03:06<01:04, 10.69s/step, loss=0.6680, lr=2.61e-06, tps=8551]Training:  75%|███████▌  | 15/20 [03:06<00:53, 10.65s/step, loss=0.6680, lr=2.61e-06, tps=8551]2026-09-26 22:06:48 | INFO | root | step 15 | epoch 0 | loss 0.8107 | grad_norm 0.8535 | lr 2.05e-06 | mem 57.00 GiB | tps 9721.15(1215.14/gpu) | num_label_tokens 75393
+Training:  75%|███████▌  | 15/20 [03:17<00:53, 10.65s/step, loss=0.8107, lr=2.05e-06, tps=9721]Training:  80%|████████  | 16/20 [03:17<00:42, 10.64s/step, loss=0.8107, lr=2.05e-06, tps=9721]2026-09-26 22:06:59 | INFO | root | step 16 | epoch 0 | loss 0.6454 | grad_norm 0.7947 | lr 1.60e-06 | mem 56.99 GiB | tps 7501.06(937.63/gpu) | num_label_tokens 51859
+Training:  80%|████████  | 16/20 [03:27<00:42, 10.64s/step, loss=0.6454, lr=1.60e-06, tps=7501]Training:  85%|████████▌ | 17/20 [03:27<00:31, 10.61s/step, loss=0.6454, lr=1.60e-06, tps=7501]2026-09-26 22:07:09 | INFO | root | step 17 | epoch 0 | loss 1.0384 | grad_norm 1.0770 | lr 1.27e-06 | mem 57.01 GiB | tps 8359.58(1044.95/gpu) | num_label_tokens 60171
+Training:  85%|████████▌ | 17/20 [03:38<00:31, 10.61s/step, loss=1.0384, lr=1.27e-06, tps=8360]Training:  90%|█████████ | 18/20 [03:38<00:21, 10.58s/step, loss=1.0384, lr=1.27e-06, tps=8360]2026-09-26 22:07:20 | INFO | root | step 18 | epoch 0 | loss 0.6896 | grad_norm 0.8057 | lr 1.07e-06 | mem 57.00 GiB | tps 8615.14(1076.89/gpu) | num_label_tokens 61691
+Training:  90%|█████████ | 18/20 [03:48<00:21, 10.58s/step, loss=0.6896, lr=1.07e-06, tps=8615]Training:  95%|█████████▌| 19/20 [03:48<00:10, 10.58s/step, loss=0.6896, lr=1.07e-06, tps=8615]2026-09-26 22:07:30 | INFO | root | step 19 | epoch 0 | loss 0.7642 | grad_norm 0.8347 | lr 1.00e-06 | mem 56.96 GiB | tps 7478.35(934.79/gpu) | num_label_tokens 57156
+Training:  95%|█████████▌| 19/20 [03:59<00:10, 10.58s/step, loss=0.7642, lr=1.00e-06, tps=7478]Training: 100%|██████████| 20/20 [03:59<00:00, 10.56s/step, loss=0.7642, lr=1.00e-06, tps=7478]Training: 100%|██████████| 20/20 [03:59<00:00, 11.97s/step, loss=0.7642, lr=1.00e-06, tps=7478]
+2026-09-26 22:07:33 | INFO | train | derisk-v1 summary: {"steps_averaged": 18, "warmup_steps_excluded": 2, "mfu/mean": 25.177851063383983, "mfu/std": 0.16596589309581342, "mfu/min": 24.66520420219056, "mfu/max": 25.367099774846757, "probe/mfu_padded_wall/mean": 25.177851063383983, "probe/mfu_padded_wall/std": 0.16596589309581342, "probe/mfu_padded_wall/min": 24.66520420219056, "probe/mfu_padded_wall/max": 25.367099774846757, "probe/mfu_effective_wall/mean": 2.079575125712923, "probe/mfu_effective_wall/std": 0.20097127561813857, "probe/mfu_effective_wall/min": 1.6723713020569606, "probe/mfu_effective_wall/max": 2.52623280248741, "probe/mfu_padded_compute/mean": 25.262488924137543, "probe/mfu_padded_compute/std": 0.11020248462396341, "probe/mfu_padded_compute/min": 25.01663303399822, "probe/mfu_padded_compute/max": 25.413825393259447, "probe/mfu_effective_compute/mean": 2.086106151397024, "probe/mfu_effective_compute/std": 0.19727525660487538, "probe/mfu_effective_compute/min": 1.7140298439293957, "probe/mfu_effective_compute/max": 2.531527380001651, "probe/tflops_per_gpu_padded_wall/mean": 249.0089470168676, "probe/tflops_per_gpu_padded_wall/std": 1.641402682717589, "probe/tflops_per_gpu_padded_wall/min": 243.93886955966462, "probe/tflops_per_gpu_padded_wall/max": 250.8806167732344, "probe/tflops_per_gpu_effective_wall/mean": 20.566997993300802, "probe/tflops_per_gpu_effective_wall/std": 1.9876059158633903, "probe/tflops_per_gpu_effective_wall/min": 16.539752177343342, "probe/tflops_per_gpu_effective_wall/max": 24.984442416600483, "probe/step_time_wall_s/mean": 10.589675676724356, "probe/step_time_wall_s/std": 0.07054717618478784, "probe/step_time_wall_s/min": 10.510210921056569, "probe/step_time_wall_s/max": 10.809299079934135, "probe/step_time_compute_s/mean": 10.553934659187993, "probe/step_time_compute_s/std": 0.04617312524808706, "probe/step_time_compute_s/min": 10.490886946907267, "probe/step_time_compute_s/max": 10.657452133018523, "probe/real_tokens_per_s_per_gpu/mean": 1056.5460424127566, "probe/real_tokens_per_s_per_gpu/std": 101.04052392524174, "probe/real_tokens_per_s_per_gpu/min": 851.4312474788217, "probe/real_tokens_per_s_per_gpu/max": 1279.7225337916939, "probe/padded_tokens_per_s_per_gpu/mean": 12377.88198798192, "probe/padded_tokens_per_s_per_gpu/std": 81.59180200082939, "probe/padded_tokens_per_s_per_gpu/min": 12125.855620307128, "probe/padded_tokens_per_s_per_gpu/max": 12470.92003999703, "probe/pad_fraction/mean": 0.9146473672654893, "probe/pad_fraction/std": 0.00811976960865393, "probe/pad_fraction/min": 0.8968677520751953, "probe/pad_fraction/max": 0.929783821105957, "probe/mem_reserved_peak_gib_max_rank/mean": 62.174045138888886, "probe/mem_reserved_peak_gib_max_rank/std": 0.10803151050284286, "probe/mem_reserved_peak_gib_max_rank/min": 61.892578125, "probe/mem_reserved_peak_gib_max_rank/max": 62.24609375, "probe/mem_allocated_peak_gib_max_rank/mean": 58.617817613813614, "probe/mem_allocated_peak_gib_max_rank/std": 1.1037395607705793, "probe/mem_allocated_peak_gib_max_rank/min": 57.46282434463501, "probe/mem_allocated_peak_gib_max_rank/max": 59.93601703643799, "routing/pad_assignment_fraction/mean": 0.9146473672654893, "routing/pad_assignment_fraction/std": 0.00811976960865393, "routing/pad_assignment_fraction/min": 0.8968677520751953, "routing/pad_assignment_fraction/max": 0.929783821105957, "routing/ep_imbalance_all_max/mean": 1.381416603370949, "routing/ep_imbalance_all_max/std": 0.04050541388334779, "routing/ep_imbalance_all_max/min": 1.334564208984375, "routing/ep_imbalance_all_max/max": 1.4981486002604167, "routing/ep_imbalance_all_mean/mean": 1.1529855098509367, "routing/ep_imbalance_all_mean/std": 0.00562277412810908, "routing/ep_imbalance_all_mean/min": 1.144520414048347, "routing/ep_imbalance_all_mean/max": 1.1632943637129187, "routing/ep_imbalance_real_mean/mean": 1.2248398699643048, "routing/ep_imbalance_real_mean/std": 0.013490103696033397, "routing/ep_imbalance_real_mean/min": 1.2002235363927072, "routing/ep_imbalance_real_mean/max": 1.2483808127832758, "routing/ep_imbalance_pad_mean/mean": 1.153715926422814, "routing/ep_imbalance_pad_mean/std": 0.005946157104596536, "routing/ep_imbalance_pad_mean/min": 1.1465481183406292, "routing/ep_imbalance_pad_mean/max": 1.1645605252513105, "routing/pad_entropy_norm_mean/mean": 0.9811284028401241, "routing/pad_entropy_norm_mean/std": 0.0004926467728505143, "routing/pad_entropy_norm_mean/min": 0.9802945315162767, "routing/pad_entropy_norm_mean/max": 0.982036518516952, "routing/real_entropy_norm_mean/mean": 0.978912800078375, "routing/real_entropy_norm_mean/std": 0.0014172781850567582, "routing/real_entropy_norm_mean/min": 0.9762199628122623, "routing/real_entropy_norm_mean/max": 0.9809431023487554, "loss/mean": 0.787835932440228, "loss/std": 0.10962008766293202, "loss/min": 0.584679365158081, "loss/max": 1.0384420156478882, "grad_norm/mean": 1.2231935138531878, "grad_norm/std": 0.5146607579461464, "grad_norm/min": 0.7640447888316433, "grad_norm/max": 2.843834007295554}
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.

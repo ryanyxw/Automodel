@@ -1,0 +1,140 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# main-v1, padding setting "batchmax", method "natural visible".
+#
+# Every micro-batch is padded to its own longest conversation.
+# As batchmax_natural_masked, but the filler is visible to attention and Mamba (attention mask 1). It
+# comes after the real tokens and attention is causal, so the real tokens never see it; labels stay -100.
+#
+# Differs from batchmax_default.yaml only in the collate function and run names / output paths
+# (check_configs.py enforces this).
+#
+# Launched by experiments/main-v1/train.py (PaddingStudyRecipe: this recipe plus router hooks, padded and
+# useful MFU, and expert placement):  bash experiments/main-v1/run_one.sh batchmax_natural_visible batchmax_natural_visible
+
+recipe: TrainFinetuneRecipeForNextTokenPrediction
+
+step_scheduler:
+  global_batch_size: 128
+  local_batch_size: 2 # 128 / (2 per GPU * 8 GPUs) = 8 micro-batches per GPU per step
+  max_steps: 80 # 2 passes of 40 steps: 40 * 128 = 5,120 = the whole training subset, seen twice in the same order
+  ckpt_every_steps: 1000000
+  val_every_steps: 1000000
+  gc_every_steps: 10
+
+dist_env:
+  backend: nccl
+  timeout_minutes: 30
+
+rng:
+  _target_: nemo_automodel.components.training.rng.StatefulRNG
+  seed: 1111
+  ranked: true
+
+model:
+  _target_: nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained
+  pretrained_model_name_or_path: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  trust_remote_code: true
+  # FusedLinearCrossEntropy consumes the final hidden state instead of full [batch, seq, vocab] logits.
+  output_hidden_states: true
+  # Repo defaults, spelled out so every run is pinned to the same kernels.
+  backend:
+    _target_: nemo_automodel.components.models.common.BackendConfig
+    attn: te
+    linear: te
+    rms_norm: torch_fp32
+    experts: torch_mm
+    dispatcher: deepep
+    fake_balanced_gate: false
+    enable_hf_state_dict_adapter: true
+
+checkpoint:
+  enabled: false
+  # Checkpoints are never written; training.jsonl is logged here.
+  checkpoint_dir: experiments/main-v1/runs/batchmax_natural_visible/checkpoint
+
+distributed:
+  strategy: fsdp2
+  tp_size: 1
+  cp_size: 1
+  pp_size: 1
+  ep_size: 8 # 128 routed experts -> 16 experts per GPU
+  sequence_parallel: false
+  activation_checkpointing: true
+
+loss_fn:
+  _target_: nemo_automodel.components.loss.linear_ce.FusedLinearCrossEntropy
+
+dataset:
+  _target_: nemo_automodel.components.datasets.llm.chat_dataset.ChatDataset
+  # 5,120 random conversations from nvidia/Nemotron-Instruction-Following-Chat-v1 (chat_if), already in a
+  # fixed random order (prepare_data.py).
+  path_or_dataset_id: experiments/main-v1/data/train.jsonl
+  # Nano's chat template with {% generation %} markers (make_chat_template.py): identical text, and the
+  # assistant-only loss mask works for multi-turn conversations with reasoning.
+  chat_template: experiments/main-v1/templates/nano3_generation.jinja
+  seq_length: 8192
+  truncation: true
+  padding: do_not_pad
+
+packed_sequence:
+  packed_sequence_size: 0
+
+dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  # train.jsonl is already shuffled; a fixed order keeps every micro-batch identical across runs.
+  shuffle: false
+  num_workers: 4
+  collate_fn:
+    _target_: pad_fill.natural_pad_collater
+    # Pad as in batchmax_default, then fill each row's padding with a random window of IF-Chat text.
+    filler_path: experiments/main-v1/data/filler.npy
+    visible: true
+    seed: 1234
+
+optimizer:
+  _target_: transformer_engine.pytorch.optimizers.fused_adam.FusedAdam
+  betas: [0.9, 0.95]
+  eps: 1e-8
+  lr: 1.0e-5
+  weight_decay: 0
+  master_weights: true
+  store_param_remainders: true
+  exp_avg_dtype: torch.bfloat16
+  exp_avg_sq_dtype: torch.bfloat16
+
+lr_scheduler:
+  lr_decay_style: cosine
+  min_lr: 1.0e-6
+
+mfu:
+  peak_tflops: 989 # H100 SXM dense BF16
+
+wandb:
+  project: main-v1
+  group: batchmax
+  name: batchmax_natural_visible
+  tags: [nemotron-nano-3, ifchat, padding, mfu, ep8]
+  dir: experiments/main-v1/runs/batchmax_natural_visible
+
+probe:
+  output_dir: experiments/main-v1/runs/batchmax_natural_visible
+  # Pad tokens are bucketed by distance from the last real token: [0], [1,8), [8,64), [64,512), [512,4096), [4096,inf).
+  pad_distance_edges: [1, 8, 64, 512, 4096]
+  summary_warmup_steps: 2
+  # nsys capture window (0-based step indices, inclusive); -1 disables. See profile_nsys.sh.
+  nsys_start_step: -1
+  nsys_end_step: -1
+  nsys_ranks: [0]

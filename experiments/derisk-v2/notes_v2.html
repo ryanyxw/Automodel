@@ -1,0 +1,42 @@
+<h3>Short answer</h3>
+<p>Evening out the pad-token load across GPUs raises MFU, but only where the expert hot spot is the bottleneck.
+On pad-fixed8192 (91.5% padding), the best variant, v2.3b (natural-text filler visible to the model), cut the step
+time from 15.98 s to 10.59 s (−34%) and raised effective MFU from 1.38% to 2.08% (+51%). The v2.2 expert placement
+gave −25% / +33%, and random or masked natural filler (v2.1, v2.3a) about −12 to −14%. On pad-batchmax, no variant
+changed the step time by more than about 2%, in either pass.</p>
+
+<h3>What each variant did to the load (pad-fixed8192)</h3>
+<ul>
+<li><b>v2.1 random pad tokens</b> and <b>v2.3a natural pad, masked</b> behave the same. With attention mask 0,
+attention and Mamba skip the filler, so each filler token reaches the router with only its own embedding. The
+router still favors a narrow set of experts for such context-free tokens: the top 6 experts per layer take 58–59%
+of filler assignments (100% with <code>&lt;|im_end|&gt;</code> pads, 10.6% for real tokens). Mean EP imbalance
+2.78× → about 2.1×.</li>
+<li><b>v2.2 expert placement</b> leaves the pads alone and moves experts instead, so each GPU hosts at most one
+pad-heavy expert per layer. Mean imbalance 2.78× → 1.38× (predicted 1.30×), worst dispatch 5.09× → 1.88×. With 6 hot
+experts on 8 GPUs and no replication, about 1.33× is the floor for the pad share of the load.</li>
+<li><b>v2.3b natural pad, visible</b> gives the filler attention mask 1, so it is read like an extra, unsupervised
+document. Filler tokens get real context and route like real text (top-6 share 10.2%), mean imbalance drops to 1.15×
+(worst 1.38×), and the hottest GPU's peak memory falls from 67.9 to 62.2 GiB. The model now also runs attention over
+the filler, and it is still the fastest variant.</li>
+<li>All variants leave the loss on real tokens unchanged (max |Δloss| ≤ 0.0013): padding sits after the real tokens
+and the model is causal, so real tokens never see the filler, and the filler has label −100.</li>
+</ul>
+
+<h3>Why pad-batchmax doesn't move</h3>
+<ul>
+<li>Pads are only 33% of its tokens, so the hot spot is milder to begin with (1.68×).</li>
+<li>Its step time is dominated by other costs: in pass 1, building a cuDNN attention plan for each new sequence
+length (derisk-v1); in pass 2, the fixed per-layer costs of small micro-batches. Even near-perfect balance (v2.2,
+1.12×) or real-text routing (v2.3b, 1.19×) removes little of either.</li>
+</ul>
+
+<h3>Next steps</h3>
+<ul>
+<li>v2.3b is sequence packing with a throwaway document. Packing real training data into those positions would make
+the same compute useful instead of discarded.</li>
+<li>Alternatively, drop pads from the experts entirely by passing the padding mask into Nemotron V3's MoE layers;
+that removes the wasted expert work as well as the hot spot, without the extra attention.</li>
+<li>A production version of v2.2 would rebalance online from recent router counts (here it was tuned on derisk-v1's
+counts for the same data order) and could replicate the hottest experts to get below the 1.33× floor.</li>
+</ul>

@@ -1,0 +1,706 @@
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+Skipping import of cpp extensions due to incompatible torch version 2.10.0+cu128 for torchao version 0.14.0         Please see GitHub issue #2919 for more info
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yamlcfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+cfg-path: /home/elwin/Automodel/experiments/derisk-v1/configs/pad_batchmax.yaml
+> initializing torch distributed with 8 workers.
+2026-09-26 19:43:45 | INFO | nemo_automodel.components.loggers.log_utils | Setting logging level to 20
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+2026-09-26 19:43:47 | INFO | root | 🚀 View run at https://wandb.ai/helloelwin/derisk-v1/runs/ede10ccd
+2026-09-26 19:43:47 | INFO | root | Experiment_details:
+2026-09-26 19:43:47 | INFO | root | Timestamp: '2026-09-26T19:43:47'
+2026-09-26 19:43:47 | INFO | root | User: elwin
+2026-09-26 19:43:47 | INFO | root | Host: instance-20260127-8
+2026-09-26 19:43:47 | INFO | root | World size: 8
+2026-09-26 19:43:47 | INFO | root | Backend: nccl
+2026-09-26 19:43:47 | INFO | root | Recipe: PaddingProbeRecipe
+2026-09-26 19:43:47 | INFO | root | Model name: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+recipe: TrainFinetuneRecipeForNextTokenPrediction
+step_scheduler:
+  global_batch_size: 128
+  local_batch_size: 4
+  max_steps: 3
+  ckpt_every_steps: 1000000
+  val_every_steps: 1000000
+  gc_every_steps: 10
+dist_env:
+  backend: nccl
+  timeout_minutes: 30
+rng:
+  _target_: nemo_automodel.components.training.rng.StatefulRNG
+  seed: 1111
+  ranked: true
+model:
+  _target_: nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained
+  pretrained_model_name_or_path: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  trust_remote_code: true
+  output_hidden_states: true
+  backend:
+    _target_: nemo_automodel.components.models.common.BackendConfig
+    attn: te
+    linear: te
+    rms_norm: torch_fp32
+    experts: torch_mm
+    dispatcher: deepep
+    fake_balanced_gate: false
+    enable_hf_state_dict_adapter: true
+checkpoint:
+  enabled: false
+  checkpoint_dir: experiments/derisk-v1/runs/smoke_pad_batchmax/checkpoint
+distributed:
+  strategy: fsdp2
+  tp_size: 1
+  cp_size: 1
+  pp_size: 1
+  ep_size: 8
+  sequence_parallel: false
+  activation_checkpointing: true
+loss_fn:
+  _target_: nemo_automodel.components.loss.linear_ce.FusedLinearCrossEntropy
+dataset:
+  _target_: nemo_automodel.components.datasets.llm.chat_dataset.ChatDataset
+  path_or_dataset_id: allenai/tulu-3-sft-mixture
+  split: train[:2560]
+  shuffle_seed: 42
+  seq_length: 4096
+  truncation: true
+  padding: do_not_pad
+packed_sequence:
+  packed_sequence_size: 0
+dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  shuffle: false
+  num_workers: 4
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.utils.default_collater
+optimizer:
+  _target_: transformer_engine.pytorch.optimizers.fused_adam.FusedAdam
+  betas:
+  - 0.9
+  - 0.95
+  eps: 1.0e-08
+  lr: 1.0e-05
+  weight_decay: 0
+  master_weights: true
+  store_param_remainders: true
+  exp_avg_dtype: torch.bfloat16
+  exp_avg_sq_dtype: torch.bfloat16
+lr_scheduler:
+  lr_decay_style: cosine
+  min_lr: 1.0e-06
+mfu:
+  peak_tflops: 989
+wandb:
+  project: derisk-v1
+  group: nano3-tulu3-padding-mfu-smoke
+  name: smoke_pad_batchmax
+  tags:
+  - nemotron-nano-3
+  - tulu3
+  - padding
+  - mfu
+  - ep8
+  dir: experiments/derisk-v1/runs/smoke_pad_batchmax
+probe:
+  output_dir: experiments/derisk-v1/runs/smoke_pad_batchmax
+  pad_distance_edges:
+  - 1
+  - 8
+  - 64
+  - 512
+  - 4096
+  nsys_start_step: -1
+  nsys_end_step: -1
+  nsys_ranks:
+  - 0
+2026-09-26 19:43:47 | INFO | root | Library versions:
+2026-09-26 19:43:47 | INFO | root | - nemo_automodel: 0.7.0+0f38dfd2 (/home/elwin/Automodel/nemo_automodel/__init__.py)
+2026-09-26 19:43:47 | INFO | root | - transformers: 5.15.1 (/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/transformers/__init__.py)
+2026-09-26 19:43:47 | INFO | root | - torch: 2.10.0+cu128 CUDA 12.8
+2026-09-26 19:43:47 | WARNING | root | save_consolidated=final but v4_compatible=False; checkpoint assets may be not compatible with transformers v4; [experimental] set --checkpoint.v4_compatible=True to enable
+2026-09-26 19:43:47 | INFO | root | No clip_grad_norm.max_norm specified in config, using default value of 1.0
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+2026-09-26 19:43:47 | WARNING | nemo_automodel.components.models.common.utils | rope_fusion is temporarily force-disabled globally (see #3027).
+2026-09-26 19:43:47 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:47 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:47 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:47 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:47 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:47 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:43:48 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:48 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:48 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:48 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:48 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:48 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:43:49 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:49 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:49 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:49 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:49 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:49 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:49 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:49 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:43:50 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:50 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:50 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:50 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:50 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:50 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:50 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:50 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:43:51 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:43:51 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:51 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/revision/main "HTTP/1.1 200 OK"
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 22812.84it/s]
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+2026-09-26 19:43:51 | INFO | nemo_automodel._transformers.model_init | Using custom model implementation for NemotronHForCausalLM
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] The following generation flags are not valid and may be ignored: ['output_hidden_states']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 67124.21it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 142248.68it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 25323.55it/s]
+2026-09-26 19:43:51 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/generation_config.json "HTTP/1.1 307 Temporary Redirect"
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 99323.84it/s]
+Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 33462.65it/s]
+2026-09-26 19:43:51 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/generation_config.json "HTTP/1.1 200 OK"
+2026-09-26 19:43:51 | INFO | nemo_automodel._transformers.kernel_patches | Set global SDPA backends to [<SDPBackend.FLASH_ATTENTION: 1>, <SDPBackend.EFFICIENT_ATTENTION: 2>, <SDPBackend.MATH: 0>]
+2026-09-26 19:43:51 | INFO | nemo_automodel._transformers.kernel_patches | Patched model with SDPA method= [<SDPBackend.FLASH_ATTENTION: 1>, <SDPBackend.EFFICIENT_ATTENTION: 2>, <SDPBackend.MATH: 0>]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 33152.81it/s]
+Fetching 35 files:   0%|          | 0/35 [00:00<?, ?it/s]Fetching 35 files: 100%|██████████| 35/35 [00:00<00:00, 263083.58it/s]
+2026-09-26 19:43:59 | INFO | root | load_model: 10.94 GB loaded in 4.53s (2.42 GB/s overall | destinations 0.03s, storage read 4.45s, adapt 0.01s, install 0.05s)
+2026-09-26 19:44:00 | INFO | root | Model summary:
+2026-09-26 19:44:00 | INFO | root | --------------------------------
+2026-09-26 19:44:00 | INFO | root | Trainable parameters: 31,577,937,344
+2026-09-26 19:44:00 | INFO | root | Total parameters: 31,577,937,344
+2026-09-26 19:44:00 | INFO | root | Trainable parameters percentage: 100.00%
+2026-09-26 19:44:00 | INFO | root | Param L2 norm: 1525.2960
+2026-09-26 19:44:00 | INFO | root | --------------------------------
+2026-09-26 19:44:00 | INFO | root | Using model config to instantiate tokenizer
+2026-09-26 19:44:00 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:44:00 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:44:00 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:44:00 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:44:01 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:44:01 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:44:01 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:44:01 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:44:01 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/configuration_nemotron_h.py "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:44:01 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/configuration_nemotron_h.py "HTTP/1.1 200 OK"
+2026-09-26 19:44:02 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:44:02 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/config.json "HTTP/1.1 200 OK"
+2026-09-26 19:44:02 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:44:02 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/bf77c3174f68ad409e1c2aa60daeb46e32d1c606/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-09-26 19:44:02 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-09-26 19:44:03 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-09-26 19:44:04 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 "HTTP/1.1 200 OK"
+2026-09-26 19:44:04 | WARNING | nemo_automodel._transformers.tokenization.nemo_auto_tokenizer | Tokenizer 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16' has pad_token_id=None; defaulting to 0. This can cause incorrect MoE auxiliary loss calculations if valid tokens share token ID 0. Set pad_token_id explicitly in your tokenizer config to avoid this.
+2026-09-26 19:44:04 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-09-26 19:44:04 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/allenai/tulu-3-sft-mixture/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/README.md "HTTP/1.1 200 OK"
+2026-09-26 19:44:04 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/resolve/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/tulu-3-sft-mixture.py "HTTP/1.1 404 Not Found"
+2026-09-26 19:44:05 | INFO | httpx | HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/allenai/tulu-3-sft-mixture/allenai/tulu-3-sft-mixture.py "HTTP/1.1 404 Not Found"
+2026-09-26 19:44:05 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/datasets/allenai/tulu-3-sft-mixture/revision/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be "HTTP/1.1 200 OK"
+2026-09-26 19:44:06 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/resolve/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-09-26 19:44:06 | INFO | httpx | HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=allenai/tulu-3-sft-mixture "HTTP/1.1 200 OK"
+2026-09-26 19:44:06 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/datasets/allenai/tulu-3-sft-mixture/tree/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-09-26 19:44:06 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/datasets/allenai/tulu-3-sft-mixture/tree/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be?recursive=false&expand=false "HTTP/1.1 200 OK"
+2026-09-26 19:44:07 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/resolve/b14afda60f1bbebe55d5d2fa1e4df5042f97f8be/dataset_infos.json "HTTP/1.1 404 Not Found"
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank [Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+2026-09-26 19:44:07 | INFO | root | Signal handler installed for SIGTERM
+2026-09-26 19:44:07 | INFO | nemo_automodel.components.training.garbage_collection | [GC] Initial GC collection took 0.00 seconds
+2026-09-26 19:44:07 | INFO | nemo_automodel.components.optim.scheduler | learning rate decay style: cosine
+2026-09-26 19:44:07 | INFO | nemo_automodel.components.optim.optimizer | Building LR scheduler with total_steps=3, warmup_steps=0, decay_style=cosine
+2026-09-26 19:44:07 | INFO | root | Model Part 0:
+2026-09-26 19:44:07 | INFO | root | FSDPNemotronHForCausalLM(
+2026-09-26 19:44:07 | INFO | root |   (model): FSDPNemotronV3Model(
+2026-09-26 19:44:07 | INFO | root |     (embed_tokens): FSDPEmbedding(131072, 2688)
+2026-09-26 19:44:07 | INFO | root |     (layers): ModuleDict(
+2026-09-26 19:44:07 | INFO | root |       (0): FSDPCheckpointWrapper(
+2026-09-26 19:44:07 | INFO | root |         (_checkpoint_wrapped_module): NemotronV3Block(
+2026-09-26 19:44:07 | INFO | root |           (norm): Float32RMSNorm()
+2026-09-26 19:44:07 | INFO | root |           (mixer): NemotronV3Mamba2Mixer(
+2026-09-26 19:44:07 | INFO | root |             (in_proj): Linear(in_features=2688, out_features=10304, bias=False)
+2026-09-26 19:44:07 | INFO | root |             (conv1d): Conv1d(6144, 6144, kernel_size=(4,), stride=(1,), padding=(3,), groups=6144)
+2026-09-26 19:44:07 | INFO | root |             (_fp32_params): FSDPNemotronV3MambaFP32Params()
+2026-09-26 19:44:07 | INFO | root |             (norm): NemotronV3MambaRMSNormGated()
+2026-09-26 19:44:07 | INFO | root |             (out_proj): Linear(in_features=4096, out_features=2688, bias=False)
+2026-09-26 19:44:07 | INFO | root |           )
+2026-09-26 19:44:07 | INFO | root |         )
+2026-09-26 19:44:07 | INFO | root |       )
+2026-09-26 19:44:07 | INFO | root |       (1): FSDPCheckpointWrapper(
+2026-09-26 19:44:07 | INFO | root |         (_checkpoint_wrapped_module): NemotronV3Block(
+2026-09-26 19:44:07 | INFO | root |           (norm): Float32RMSNorm()
+2026-09-26 19:44:07 | INFO | root |           (mixer): MoE(
+2026-09-26 19:44:07 | INFO | root |             (gate): Gate(
+2026-09-26 19:44:07 | INFO | root |               (routing_core): _GateRoutingCore()
+2026-09-26 19:44:07 | INFO | root |             )
+2026-09-26 19:44:07 | INFO | root |             (experts): GroupedExpertsDeepEP()
+2026-09-26 19:44:07 | INFO | root |             (shared_experts): MLP(
+2026-09-26 19:44:07 | INFO | root |               (up_proj): Linear()
+2026-09-26 19:44:07 | INFO | root |               (down_proj): Linear()
+2026-09-26 19:44:07 | INFO | root |             )
+2026-09-26 19:44:07 | INFO | root |           )
+2026-09-26 19:44:07 | INFO | root |         )
+2026-09-26 19:44:07 | INFO | root |       )
+2026-09-26 19:44:07 | INFO | root |       (2): FSDPCheckpointWrapper(
+2026-09-26 19:44:07 | INFO | root |         (_checkpoint_wrapped_module): NemotronV3Block(
+2026-09-26 19:44:07 | INFO | root |           (norm): Float32RMSNorm()
+2026-09-26 19:44:07 | INFO | root |           (mixer): NemotronV3Mamba2Mixer(
+2026-09-26 19:44:07 | INFO | root |             (in_proj): Linear(in_features=2688, out_features=10304, bias=False)
+2026-09-26 19:44:07 | INFO | root |             (conv1d): Conv1d(6144, 6144, kernel_size=(4,), stride=(1,), padding=(3,), groups=6144)
+2026-09-26 19:44:07 | INFO | root |             (_fp32_params): FSDPNemotronV3MambaFP32Params()
+2026-09-26 19:44:07 | INFO | root |             (norm): NemotronV3MambaRMSNormGated()
+2026-09-26 19:44:07 | INFO | root |             (out_proj): Linear(in_features=4096, out_features=2688, bias=False)
+2026-09-26 19:44:07 | INFO | root | ...
+2026-09-26 19:44:07 | INFO | root | Optimizer:
+2026-09-26 19:44:07 | INFO | root | FusedAdam (
+2026-09-26 19:44:07 | INFO | root | Parameter Group 0
+2026-09-26 19:44:07 | INFO | root |     betas: [0.9, 0.95]
+2026-09-26 19:44:07 | INFO | root |     bias_correction: True
+2026-09-26 19:44:07 | INFO | root |     eps: 1e-08
+2026-09-26 19:44:07 | INFO | root |     lr: 1e-05
+2026-09-26 19:44:07 | INFO | root |     weight_decay: 0.0
+2026-09-26 19:44:07 | INFO | root | )
+2026-09-26 19:44:07 | INFO | root | LR scheduler:
+2026-09-26 19:44:07 | INFO | root | OptimizerParamScheduler(
+2026-09-26 19:44:07 | INFO | root |     optimizer: FusedAdam
+2026-09-26 19:44:07 | INFO | root |     learning_rate:
+2026-09-26 19:44:07 | INFO | root |         init_lr: 1.0000000000000002e-06
+2026-09-26 19:44:07 | INFO | root |         max_lr: 1e-05
+2026-09-26 19:44:07 | INFO | root |         min_lr: 1e-06
+2026-09-26 19:44:07 | INFO | root |         warmup_steps: 0
+2026-09-26 19:44:07 | INFO | root |         decay_steps: 3
+2026-09-26 19:44:07 | INFO | root |         decay_style: cosine
+2026-09-26 19:44:07 | INFO | root |     weight_decay:
+2026-09-26 19:44:07 | INFO | root |         start_wd: 0
+2026-09-26 19:44:07 | INFO | root |         end_wd: 0
+2026-09-26 19:44:07 | INFO | root |         incr_steps: 3
+2026-09-26 19:44:07 | INFO | root |         incr_style: constant
+2026-09-26 19:44:07 | INFO | root |     current_step: 0
+2026-09-26 19:44:07 | INFO | root | )
+2026-09-26 19:44:07 | INFO | root | Step scheduler:
+2026-09-26 19:44:07 | INFO | root | - Gradient accumulation steps: 4
+2026-09-26 19:44:07 | INFO | root | - Checkpoint every steps: 1000000
+2026-09-26 19:44:07 | INFO | root | - Garbage collect every steps: 10
+2026-09-26 19:44:07 | INFO | root | - Current Epoch: 0
+2026-09-26 19:44:07 | INFO | root | - Number of epochs: 10
+2026-09-26 19:44:07 | INFO | root | - Validation every steps: 1000000
+2026-09-26 19:44:07 | INFO | root | - Max train steps: 3
+2026-09-26 19:44:07 | INFO | root | - Checkpoint retention: inactive because checkpointing is disabled
+2026-09-26 19:44:07 | INFO | padding_probe | RoutingProbe hooked 23 MoE routers (layers [1, 3, 6, 8, 10, 13, 15, 17, 20, 22, 24, 27, 29, 31, 34, 36, 38, 40, 43, 45, 47, 49, 51]), 128 experts, top-6, EP=8
+Training:   0%|          | 0/3 [00:00<?, ?step/s]Training:   0%|          | 0/3 [00:33<?, ?step/s]
+2026-09-26 19:44:42 | WARNING | padding_probe | RoutingProbe recorded no steps; skipping experiments/derisk-v1/runs/smoke_pad_batchmax/routing.npz
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank2]:     main()
+[rank2]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+[rank2]:     recipe.run_train_validation_loop()
+[rank2]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+[rank2]:     super().run_train_validation_loop()
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+[rank2]:     train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+[rank2]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+[rank2]:     sample = super()._run_train_optim_step(batches, max_grad_norm)
+[rank2]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+[rank2]:     self._forward_backward_step(
+[rank2]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+[rank2]:     super()._forward_backward_step(
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+[rank2]:     local_loss = calculate_loss(
+[rank2]:                  ^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+[rank2]:     return loss_fn(**loss_fn_kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank2]:     return self._call_impl(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank2]:     return forward_call(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+[rank2]:     raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+[rank2]: ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank3]:     main()
+[rank3]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+[rank3]:     recipe.run_train_validation_loop()
+[rank3]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+[rank3]:     super().run_train_validation_loop()
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+[rank3]:     train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+[rank3]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+[rank3]:     sample = super()._run_train_optim_step(batches, max_grad_norm)
+[rank3]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+[rank3]:     self._forward_backward_step(
+[rank3]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+[rank3]:     super()._forward_backward_step(
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+[rank3]:     local_loss = calculate_loss(
+[rank3]:                  ^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+[rank3]:     return loss_fn(**loss_fn_kwargs)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank3]:     return self._call_impl(*args, **kwargs)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank3]:     return forward_call(*args, **kwargs)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+[rank3]:     raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+[rank3]: ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+2026-09-26 19:44:42 | INFO | __main__ | derisk-v1 summary: {"steps_averaged": 0, "warmup_steps_excluded": 2}
+[rank4]: Traceback (most recent call last):
+[rank4]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank4]:     main()
+[rank4]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+[rank4]:     recipe.run_train_validation_loop()
+[rank4]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+[rank4]:     super().run_train_validation_loop()
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+[rank4]:     train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+[rank4]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+[rank4]:     sample = super()._run_train_optim_step(batches, max_grad_norm)
+[rank4]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+[rank4]:     self._forward_backward_step(
+[rank4]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+[rank4]:     super()._forward_backward_step(
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+[rank4]:     local_loss = calculate_loss(
+[rank4]:                  ^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+[rank4]:     return loss_fn(**loss_fn_kwargs)
+[rank4]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank4]:     return self._call_impl(*args, **kwargs)
+[rank4]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank4]:     return forward_call(*args, **kwargs)
+[rank4]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank4]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+[rank4]:     raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+[rank4]: ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+[rank5]: Traceback (most recent call last):
+[rank5]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank5]:     main()
+[rank5]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+[rank5]:     recipe.run_train_validation_loop()
+[rank5]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+[rank5]:     super().run_train_validation_loop()
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+[rank5]:     train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+[rank5]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+[rank5]:     sample = super()._run_train_optim_step(batches, max_grad_norm)
+[rank5]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+[rank5]:     self._forward_backward_step(
+[rank5]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+[rank5]:     super()._forward_backward_step(
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+[rank5]:     local_loss = calculate_loss(
+[rank5]:                  ^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+[rank5]:     return loss_fn(**loss_fn_kwargs)
+[rank5]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank5]:     return self._call_impl(*args, **kwargs)
+[rank5]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank5]:     return forward_call(*args, **kwargs)
+[rank5]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank5]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+[rank5]:     raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+[rank5]: ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank1]:     main()
+[rank1]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+[rank1]:     recipe.run_train_validation_loop()
+[rank1]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+[rank1]:     super().run_train_validation_loop()
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+[rank1]:     train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+[rank1]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+[rank1]:     sample = super()._run_train_optim_step(batches, max_grad_norm)
+[rank1]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+[rank1]:     self._forward_backward_step(
+[rank1]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+[rank1]:     super()._forward_backward_step(
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+[rank1]:     local_loss = calculate_loss(
+[rank1]:                  ^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+[rank1]:     return loss_fn(**loss_fn_kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank1]:     return self._call_impl(*args, **kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank1]:     return forward_call(*args, **kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+[rank1]:     raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+[rank1]: ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+[rank7]: Traceback (most recent call last):
+[rank7]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank7]:     main()
+[rank7]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+[rank7]:     recipe.run_train_validation_loop()
+[rank7]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+[rank7]:     super().run_train_validation_loop()
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+[rank7]:     train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+[rank7]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+[rank7]:     sample = super()._run_train_optim_step(batches, max_grad_norm)
+[rank7]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+[rank7]:     self._forward_backward_step(
+[rank7]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+[rank7]:     super()._forward_backward_step(
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+[rank7]:     local_loss = calculate_loss(
+[rank7]:                  ^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+[rank7]:     return loss_fn(**loss_fn_kwargs)
+[rank7]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank7]:     return self._call_impl(*args, **kwargs)
+[rank7]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank7]:     return forward_call(*args, **kwargs)
+[rank7]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank7]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+[rank7]:     raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+[rank7]: ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+[rank6]: Traceback (most recent call last):
+[rank6]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank6]:     main()
+[rank6]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+[rank6]:     recipe.run_train_validation_loop()
+[rank6]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+[rank6]:     super().run_train_validation_loop()
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+[rank6]:     train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+[rank6]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+[rank6]:     sample = super()._run_train_optim_step(batches, max_grad_norm)
+[rank6]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+[rank6]:     self._forward_backward_step(
+[rank6]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+[rank6]:     super()._forward_backward_step(
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+[rank6]:     local_loss = calculate_loss(
+[rank6]:                  ^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+[rank6]:     return loss_fn(**loss_fn_kwargs)
+[rank6]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank6]:     return self._call_impl(*args, **kwargs)
+[rank6]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank6]:     return forward_call(*args, **kwargs)
+[rank6]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank6]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+[rank6]:     raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+[rank6]: ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+Traceback (most recent call last):
+  File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+    main()
+  File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+    recipe.run_train_validation_loop()
+  File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+    super().run_train_validation_loop()
+  File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+    train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+    sample = super()._run_train_optim_step(batches, max_grad_norm)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+    self._forward_backward_step(
+  File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+    super()._forward_backward_step(
+  File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+    local_loss = calculate_loss(
+                 ^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+    return loss_fn(**loss_fn_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+    raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 407, in <module>
+[rank0]:     main()
+[rank0]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 403, in main
+[rank0]:     recipe.run_train_validation_loop()
+[rank0]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 144, in run_train_validation_loop
+[rank0]:     super().run_train_validation_loop()
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1107, in run_train_validation_loop
+[rank0]:     train_log_data = self._run_train_optim_step(batches, self.max_grad_norm)
+[rank0]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 206, in _run_train_optim_step
+[rank0]:     sample = super()._run_train_optim_step(batches, max_grad_norm)
+[rank0]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1454, in _run_train_optim_step
+[rank0]:     self._forward_backward_step(
+[rank0]:   File "/home/elwin/Automodel/experiments/derisk-v1/train.py", line 173, in _forward_backward_step
+[rank0]:     super()._forward_backward_step(
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/recipes/llm/train_ft.py", line 1340, in _forward_backward_step
+[rank0]:     local_loss = calculate_loss(
+[rank0]:                  ^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/utils.py", line 188, in calculate_loss
+[rank0]:     return loss_fn(**loss_fn_kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/elwin/Automodel/nemo_automodel/components/loss/linear_ce.py", line 242, in forward
+[rank0]:     raise ImportError(MISSING_CUT_CROSS_ENTROPY_MSG)
+[rank0]: ImportError: cut_cross_entropy is not installed. Please install it with `pip install cut-cross-entropy`.
+W0926 19:44:48.741000 1522711 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1522729 closing signal SIGTERM
+W0926 19:44:48.743000 1522711 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1522730 closing signal SIGTERM
+W0926 19:44:48.744000 1522711 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1522732 closing signal SIGTERM
+W0926 19:44:48.744000 1522711 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1522733 closing signal SIGTERM
+W0926 19:44:48.744000 1522711 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1522734 closing signal SIGTERM
+W0926 19:44:48.745000 1522711 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1522735 closing signal SIGTERM
+W0926 19:44:48.746000 1522711 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 1522736 closing signal SIGTERM
+E0926 19:44:49.776000 1522711 torch/distributed/elastic/multiprocessing/api.py:984] failed (exitcode: 1) local_rank: 2 (pid: 1522731) of binary: /home/elwin/venvs/automodel-cu12/bin/python
+Traceback (most recent call last):
+  File "/home/elwin/venvs/automodel-cu12/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/run.py", line 991, in main
+    run(args)
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/run.py", line 982, in run
+    elastic_launch(
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elwin/venvs/automodel-cu12/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/home/elwin/Automodel/experiments/derisk-v1/train.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-09-26_19:44:49
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 1522729)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[2]:
+  time      : 2026-09-26_19:44:49
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 1 (local_rank: 1)
+  exitcode  : -15 (pid: 1522730)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 1522730
+[3]:
+  time      : 2026-09-26_19:44:49
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 1522732)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[4]:
+  time      : 2026-09-26_19:44:49
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 4 (local_rank: 4)
+  exitcode  : 1 (pid: 1522733)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[5]:
+  time      : 2026-09-26_19:44:49
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 5 (local_rank: 5)
+  exitcode  : -15 (pid: 1522734)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 1522734
+[6]:
+  time      : 2026-09-26_19:44:49
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 6 (local_rank: 6)
+  exitcode  : -15 (pid: 1522735)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 1522735
+[7]:
+  time      : 2026-09-26_19:44:49
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 7 (local_rank: 7)
+  exitcode  : -15 (pid: 1522736)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 1522736
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-09-26_19:44:48
+  host      : instance-20260127-8.c.nv-berkeleyscal-20260108223834.internal
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 1522731)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
+exit: 1

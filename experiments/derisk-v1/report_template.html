@@ -1,0 +1,493 @@
+<!doctype html>
+<!-- Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+     Licensed under the Apache License, Version 2.0. Template for experiments/derisk-v1/make_report.py:
+     the generator fills {{TITLE}}, {{BODY_HTML}} and {{PAYLOAD_JSON}}; charts render from the payload. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --text-1: #0b0b0b; --text-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11, 11, 11, 0.10); --shade: rgba(137, 135, 129, 0.12);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --accent: #4a3aa7; --deemph: #898781; --good: #006300; --critical: #d03b3b;
+  --seq-0: #cde2fb; --seq-1: #b7d3f6; --seq-2: #9ec5f4; --seq-3: #86b6ef; --seq-4: #6da7ec; --seq-5: #5598e7;
+  --seq-6: #3987e5; --seq-7: #2a78d6; --seq-8: #256abf; --seq-9: #1c5cab; --seq-10: #184f95; --seq-11: #104281;
+  --seq-12: #0d366b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --baseline: #383835; --border: rgba(255, 255, 255, 0.10); --shade: rgba(137, 135, 129, 0.16);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --accent: #9085e9; --deemph: #898781; --good: #0ca30c; --critical: #d03b3b;
+    --seq-0: #0d366b; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #2a78d6;
+    --seq-6: #3987e5; --seq-7: #5598e7; --seq-8: #6da7ec; --seq-9: #86b6ef; --seq-10: #9ec5f4; --seq-11: #b7d3f6;
+    --seq-12: #cde2fb;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --baseline: #383835; --border: rgba(255, 255, 255, 0.10); --shade: rgba(137, 135, 129, 0.16);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --accent: #9085e9; --deemph: #898781; --good: #0ca30c; --critical: #d03b3b;
+  --seq-0: #0d366b; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #2a78d6;
+  --seq-6: #3987e5; --seq-7: #5598e7; --seq-8: #6da7ec; --seq-9: #86b6ef; --seq-10: #9ec5f4; --seq-11: #b7d3f6;
+  --seq-12: #cde2fb;
+}
+* { box-sizing: border-box; }
+html { background: var(--page); }
+body {
+  margin: 0; color: var(--text-1); background: var(--page);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+header.page { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 8px; }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 6px; font-weight: 650; }
+h2 { font-size: 19px; margin: 40px 0 10px; font-weight: 650; }
+h3 { font-size: 15px; margin: 0; font-weight: 600; }
+p, li { color: var(--text-1); }
+.meta { color: var(--text-2); font-size: 13px; }
+.meta a, a { color: var(--series-1); }
+.lede { color: var(--text-2); max-width: 900px; }
+nav.toc { margin: 16px 0 8px; font-size: 13px; color: var(--text-2); }
+nav.toc a { margin-right: 14px; }
+button {
+  font: inherit; font-size: 13px; color: var(--text-2); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+button:hover { color: var(--text-1); }
+button:focus-visible, .plot:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.findings { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 22px; }
+.findings li { margin: 6px 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+.tile .label { color: var(--text-2); font-size: 13px; }
+.tile .row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.tile .key { width: 10px; height: 10px; border-radius: 2px; flex: none; align-self: center; }
+.tile .arm { color: var(--text-2); font-size: 12px; min-width: 104px; }
+.tile .value { font-size: 20px; font-weight: 600; white-space: nowrap; }
+.tile .sub { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tile .delta { color: var(--text-2); font-size: 12px; margin-top: 6px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+figure.card { margin: 14px 0 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px 10px; }
+.card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.card-head .subtitle { color: var(--text-2); font-size: 13px; margin: 2px 0 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 2px; font-size: 13px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; }
+.legend i.line { width: 16px; height: 2px; border-radius: 1px; }
+.legend i.rect { width: 10px; height: 10px; border-radius: 2px; }
+.plot { position: relative; margin-top: 6px; }
+.plot svg { display: block; overflow: visible; }
+.plot text { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.plot text.label { fill: var(--text-2); font-size: 12px; }
+.tooltip {
+  position: absolute; pointer-events: none; background: var(--surface); color: var(--text-1);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); white-space: nowrap; z-index: 5; display: none;
+}
+.tooltip .t-head { color: var(--text-2); margin-bottom: 4px; }
+.tooltip .t-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+.tooltip .t-row i { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+.tooltip .t-row b { font-weight: 600; min-width: 56px; }
+.tooltip .t-row span { color: var(--text-2); }
+.table-wrap { max-height: 420px; overflow: auto; margin-top: 8px; }
+table { border-collapse: collapse; font-size: 13px; width: 100%; }
+th, td { text-align: right; padding: 5px 9px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+th { color: var(--text-2); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+th:first-child, td:first-child, th.text, td.text { text-align: left; }
+table.kv td:first-child { color: var(--text-2); width: 32%; }
+table.kv td { text-align: left; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px 10px; margin-top: 12px; }
+.scale { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.scale .ramp { display: flex; }
+.scale .ramp i { width: 18px; height: 10px; display: inline-block; }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
+pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.note { color: var(--text-2); font-size: 13px; }
+.callout { border-left: 3px solid var(--baseline); padding: 2px 12px; color: var(--text-2); }
+</style>
+</head>
+<body>
+<main>
+{{BODY_HTML}}
+</main>
+<script type="application/json" id="report-data">{{PAYLOAD_JSON}}</script>
+<script>
+"use strict";
+(() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const payload = JSON.parse(document.getElementById("report-data").textContent);
+
+  const svgEl = (tag, attrs, parent) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+    if (parent) parent.appendChild(node);
+    return node;
+  };
+  const htmlEl = (tag, className, parent, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    if (parent) parent.appendChild(node);
+    return node;
+  };
+  const cssVar = (name) => `var(${name})`;
+
+  const FORMATS = {
+    int: (v) => Math.round(v).toLocaleString("en-US"),
+    num0: (v) => v.toLocaleString("en-US", { maximumFractionDigits: 0 }),
+    num1: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+    num2: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    num3: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
+    pct1: (v) => `${v.toFixed(1)}%`,
+    pct2: (v) => `${v.toFixed(2)}%`,
+    frac_pct1: (v) => `${(100 * v).toFixed(1)}%`,
+    frac_pct2: (v) => `${(100 * v).toFixed(2)}%`,
+    s2: (v) => `${v.toFixed(2)} s`,
+    gib1: (v) => `${v.toFixed(1)} GiB`,
+    x2: (v) => `${v.toFixed(2)}×`,
+    s0: (v) => `${v.toFixed(0)} s`,
+    pct0: (v) => `${v.toFixed(0)}%`,
+    x1: (v) => `${v.toFixed(1)}×`,
+    frac_pct0: (v) => `${(100 * v).toFixed(0)}%`,
+    compact: (v) => {
+      const a = Math.abs(v);
+      if (a >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+      if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
+      if (a >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+      return v.toFixed(0);
+    },
+  };
+  const fmt = (name, v) => (v === null || v === undefined || Number.isNaN(v) ? "–" : (FORMATS[name] || FORMATS.num2)(v));
+
+  const niceTicks = (lo, hi, count) => {
+    if (hi <= lo) hi = lo + 1;
+    const raw = (hi - lo) / Math.max(count, 1);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+    const start = Math.floor(lo / step) * step;
+    const ticks = [];
+    for (let t = start; t <= hi + step * 1e-9; t += step) ticks.push(Number(t.toFixed(10)));
+    if (ticks[ticks.length - 1] < hi) ticks.push(Number((ticks[ticks.length - 1] + step).toFixed(10)));
+    return ticks;
+  };
+
+  // ---- tooltip -----------------------------------------------------------------------------
+  const makeTooltip = (plot) => htmlEl("div", "tooltip", plot);
+  const showTooltip = (tip, plot, x, y, head, rows) => {
+    tip.replaceChildren();
+    htmlEl("div", "t-head", tip, head);
+    for (const row of rows) {
+      const line = htmlEl("div", "t-row", tip);
+      if (row.color) htmlEl("i", "", line).style.background = cssVar(row.color);
+      htmlEl("b", "", line, row.value);
+      htmlEl("span", "", line, row.label);
+    }
+    tip.style.display = "block";
+    const pw = plot.clientWidth;
+    const tw = tip.offsetWidth;
+    const left = x + 14 + tw > pw ? Math.max(0, x - 14 - tw) : x + 14;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, y - 10)}px`;
+  };
+  const hideTooltip = (tip) => { tip.style.display = "none"; };
+
+  // ---- card with legend and table view -----------------------------------------------------
+  const buildTable = (wrap, table) => {
+    const t = htmlEl("table", "", wrap);
+    if (table.caption) htmlEl("caption", "note", t, table.caption).style.textAlign = "left";
+    const head = htmlEl("tr", "", htmlEl("thead", "", t));
+    for (const c of table.columns) htmlEl("th", "", head, c);
+    const body = htmlEl("tbody", "", t);
+    for (const r of table.rows) {
+      const tr = htmlEl("tr", "", body);
+      for (const cell of r) htmlEl("td", "", tr, cell);
+    }
+  };
+  const legendFor = (parent, series, kind) => {
+    if (!series || series.length < 2) return;
+    const legend = htmlEl("div", "legend", parent);
+    for (const s of series) {
+      const item = htmlEl("span", "", legend);
+      htmlEl("i", kind, item).style.background = cssVar(s.color);
+      htmlEl("span", "", item, s.label);
+    }
+  };
+
+  // ---- line chart (crosshair + one tooltip listing every series) ---------------------------
+  const lineChart = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const H = spec.height || 230;
+    const endLabels = spec.endLabels !== false && spec.series.length <= 4;
+    const m = { l: 66, r: endLabels ? 118 : 16, t: 10, b: 38 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const xs = [...new Set(spec.series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => a - b);
+    const ys = spec.series.flatMap((s) => s.points.map((p) => p[1]).filter((v) => v !== null));
+    let yLo = spec.y.min !== undefined ? spec.y.min : Math.min(...ys);
+    let yHi = spec.y.max !== undefined ? spec.y.max : Math.max(...ys);
+    if (spec.y.min === undefined) yLo -= (yHi - yLo) * 0.08 || 1;
+    const yt = niceTicks(yLo, yHi, 4);
+    yLo = spec.y.min !== undefined ? spec.y.min : yt[0];
+    yHi = yt[yt.length - 1];
+    const xLo = xs[0], xHi = xs[xs.length - 1] === xs[0] ? xs[0] + 1 : xs[xs.length - 1];
+    const sx = (x) => m.l + ((x - xLo) / (xHi - xLo)) * iw;
+    const sy = (y) => m.t + ih - ((y - yLo) / (yHi - yLo)) * ih;
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "line chart" }, plot);
+    if (spec.shade) {
+      const [a, b] = spec.shade;
+      svgEl("rect", { x: sx(a) - 4, y: m.t, width: Math.max(sx(b) - sx(a) + 8, 8), height: ih, style: "fill: var(--shade)" }, svg);
+      svgEl("text", { x: sx(a) - 2, y: m.t + 11 }, svg).textContent = spec.shadeLabel || "warmup";
+    }
+    for (const t of yt) {
+      if (t < yLo - 1e-12 || t > yHi + 1e-12) continue;
+      svgEl("line", { x1: m.l, x2: m.l + iw, y1: sy(t), y2: sy(t), style: `stroke: var(${t === yLo ? "--baseline" : "--grid"}); stroke-width: 1` }, svg);
+      svgEl("text", { x: m.l - 8, y: sy(t) + 4, "text-anchor": "end" }, svg).textContent = fmt(spec.y.tickFmt || spec.y.fmt, t);
+    }
+    const xTicks = spec.x.ticks || niceTicks(xLo, xHi, Math.min(10, xs.length)).filter((t) => t >= xLo && t <= xHi);
+    for (const t of xTicks) {
+      svgEl("text", { x: sx(t), y: m.t + ih + 16, "text-anchor": "middle" }, svg).textContent = fmt(spec.x.fmt || "int", t);
+    }
+    svgEl("text", { class: "label", x: m.l + iw / 2, y: H - 4, "text-anchor": "middle" }, svg).textContent = spec.x.label;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + ih / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.y.label;
+    const ends = [];
+    for (const s of spec.series) {
+      let d = "";
+      let pen = false;
+      for (const [x, y] of s.points) {
+        if (y === null) { pen = false; continue; }
+        d += `${pen ? "L" : "M"}${sx(x).toFixed(2)},${sy(y).toFixed(2)}`;
+        pen = true;
+      }
+      svgEl("path", { d, style: `fill: none; stroke: var(${s.color}); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round` }, svg);
+      if (spec.markers) {
+        for (const [x, y] of s.points) {
+          if (y === null) continue;
+          svgEl("circle", { cx: sx(x), cy: sy(y), r: 3.5, style: `fill: var(${s.color}); stroke: var(--surface); stroke-width: 2` }, svg);
+        }
+      }
+      const last = [...s.points].reverse().find((p) => p[1] !== null);
+      if (last) {
+        svgEl("circle", { cx: sx(last[0]), cy: sy(last[1]), r: 4, style: `fill: var(${s.color}); stroke: var(--surface); stroke-width: 2` }, svg);
+        ends.push({ y: sy(last[1]), x: sx(last[0]), s, v: last[1] });
+      }
+    }
+    if (endLabels) {
+      ends.sort((a, b) => a.y - b.y);
+      const collide = ends.some((e, i) => i > 0 && e.y - ends[i - 1].y < 26);
+      if (!collide) {
+        for (const e of ends) {
+          svgEl("line", { x1: e.x + 7, x2: e.x + 17, y1: e.y, y2: e.y, style: `stroke: var(${e.s.color}); stroke-width: 2` }, svg);
+          svgEl("text", { class: "label", x: e.x + 21, y: e.y - 2 }, svg).textContent = e.s.label;
+          svgEl("text", { x: e.x + 21, y: e.y + 11 }, svg).textContent = fmt(spec.y.fmt, e.v);
+        }
+      }
+    }
+    const cross = svgEl("line", { y1: m.t, y2: m.t + ih, style: "stroke: var(--muted); stroke-width: 1; display: none" }, svg);
+    const tip = makeTooltip(plot);
+    let index = -1;
+    const show = (i) => {
+      index = Math.max(0, Math.min(xs.length - 1, i));
+      const x = xs[index];
+      cross.setAttribute("x1", sx(x));
+      cross.setAttribute("x2", sx(x));
+      cross.style.display = "";
+      const rows = spec.series.map((s) => {
+        const p = s.points.find((q) => q[0] === x);
+        return { color: s.color, value: fmt(spec.y.fmt, p ? p[1] : null), label: s.label };
+      });
+      const yTop = Math.min(...spec.series.map((s) => { const p = s.points.find((q) => q[0] === x); return p && p[1] !== null ? sy(p[1]) : m.t + ih; }));
+      showTooltip(tip, plot, sx(x), yTop, `${spec.x.label} ${fmt(spec.x.fmt || "int", x)}`, rows);
+    };
+    const hide = () => { cross.style.display = "none"; hideTooltip(tip); };
+    const hit = svgEl("rect", { x: m.l, y: m.t, width: iw, height: ih, style: "fill: transparent" }, svg);
+    hit.addEventListener("pointermove", (ev) => {
+      const r = svg.getBoundingClientRect();
+      const px = ev.clientX - r.left;
+      let best = 0;
+      xs.forEach((x, i) => { if (Math.abs(sx(x) - px) < Math.abs(sx(xs[best]) - px)) best = i; });
+      show(best);
+    });
+    hit.addEventListener("pointerleave", hide);
+    plot.tabIndex = 0;
+    plot.addEventListener("focus", () => show(index < 0 ? xs.length - 1 : index));
+    plot.addEventListener("blur", hide);
+    plot.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowRight") { show(index + 1); ev.preventDefault(); }
+      if (ev.key === "ArrowLeft") { show(index - 1); ev.preventDefault(); }
+    });
+  };
+  const lineTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.x.label, ...spec.series.map((s) => s.label)],
+    rows: [...new Set(spec.series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => a - b).map((x) => [
+      fmt(spec.x.fmt || "int", x),
+      ...spec.series.map((s) => { const p = s.points.find((q) => q[0] === x); return fmt(spec.y.tableFmt || spec.y.fmt, p ? p[1] : null); }),
+    ]),
+  });
+
+  // ---- grouped bars (per-bar hover) --------------------------------------------------------
+  const barChart = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const H = spec.height || 220;
+    const m = { l: 66, r: 16, t: 10, b: 38 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const n = spec.categories.length, k = spec.series.length;
+    const vals = spec.series.flatMap((s) => s.values);
+    const yt = niceTicks(0, Math.max(...vals), 4);
+    const yHi = yt[yt.length - 1];
+    const sy = (v) => m.t + ih - (v / yHi) * ih;
+    const band = iw / n;
+    const bw = Math.min(24, (band - 12) / k - 2);
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "bar chart" }, plot);
+    for (const t of yt) {
+      svgEl("line", { x1: m.l, x2: m.l + iw, y1: sy(t), y2: sy(t), style: `stroke: var(${t === 0 ? "--baseline" : "--grid"}); stroke-width: 1` }, svg);
+      svgEl("text", { x: m.l - 8, y: sy(t) + 4, "text-anchor": "end" }, svg).textContent = fmt(spec.y.tickFmt || spec.y.fmt, t);
+    }
+    svgEl("text", { class: "label", x: m.l + iw / 2, y: H - 4, "text-anchor": "middle" }, svg).textContent = spec.x.label;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + ih / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.y.label;
+    const tip = makeTooltip(plot);
+    spec.categories.forEach((cat, i) => {
+      const cx = m.l + band * (i + 0.5);
+      svgEl("text", { x: cx, y: m.t + ih + 16, "text-anchor": "middle" }, svg).textContent = cat;
+      const groupW = k * bw + (k - 1) * 2;
+      spec.series.forEach((s, j) => {
+        const v = s.values[i];
+        const x = cx - groupW / 2 + j * (bw + 2);
+        const y = sy(v), h = m.t + ih - y, r = Math.min(4, h, bw / 2);
+        const d = `M${x},${m.t + ih}V${y + r}Q${x},${y} ${x + r},${y}H${x + bw - r}Q${x + bw},${y} ${x + bw},${y + r}V${m.t + ih}Z`;
+        const bar = svgEl("path", { d, style: `fill: var(${s.color})` }, svg);
+        const hit = svgEl("rect", { x: x - 1, y: m.t, width: bw + 2, height: ih, style: "fill: transparent" }, svg);
+        const on = () => { bar.style.opacity = "0.8"; showTooltip(tip, plot, x + bw, y, `${spec.x.label} ${cat}`, [{ color: s.color, value: fmt(spec.y.fmt, v), label: s.label }]); };
+        const off = () => { bar.style.opacity = ""; hideTooltip(tip); };
+        hit.addEventListener("pointermove", on);
+        hit.addEventListener("pointerleave", off);
+      });
+    });
+  };
+  const barTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.x.label, ...spec.series.map((s) => s.label)],
+    rows: spec.categories.map((c, i) => [c, ...spec.series.map((s) => fmt(spec.y.fmt, s.values[i]))]),
+  });
+
+  // ---- heatmap (per-cell hover, discrete sequential steps) ---------------------------------
+  const STEPS = 13;
+  const heatBin = (v, vmax, scale) => {
+    const f = Math.max(0, Math.min(1, v / (vmax || 1)));
+    const g = scale === "sqrt" ? Math.sqrt(f) : f;
+    return Math.min(STEPS - 1, Math.floor(g * STEPS));
+  };
+  const heatmap = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const rows = spec.rows.length, cols = spec.cols.length;
+    const groupEvery = spec.groupEvery || cols;
+    const nGroups = Math.ceil(cols / groupEvery);
+    const m = { l: 64, r: 10, t: spec.groupLabels ? 22 : 8, b: 30 };
+    const gap = 2;
+    const cw = (W - m.l - m.r - gap * (nGroups - 1)) / cols;
+    const ch = spec.cellHeight || 12;
+    const H = m.t + rows * ch + m.b;
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "heatmap" }, plot);
+    const cx = (c) => m.l + c * cw + Math.floor(c / groupEvery) * gap;
+    for (let r = 0; r < rows; r++) {
+      svgEl("text", { x: m.l - 8, y: m.t + r * ch + ch - 2, "text-anchor": "end" }, svg).textContent = spec.rows[r];
+      for (let c = 0; c < cols; c++) {
+        const v = spec.values[r][c];
+        svgEl("rect", { x: cx(c), y: m.t + r * ch, width: Math.max(cw - 0.5, 0.5), height: ch - 1, style: `fill: var(--seq-${heatBin(v, spec.vmax, spec.scale)})` }, svg);
+      }
+    }
+    if (spec.groupLabels) {
+      spec.groupLabels.forEach((label, g) => {
+        const x0 = cx(g * groupEvery), x1 = cx(Math.min(cols, (g + 1) * groupEvery) - 1) + cw;
+        svgEl("text", { x: (x0 + x1) / 2, y: m.t - 8, "text-anchor": "middle" }, svg).textContent = label;
+      });
+    }
+    svgEl("text", { class: "label", x: m.l + (W - m.l - m.r) / 2, y: H - 8, "text-anchor": "middle" }, svg).textContent = spec.colTitle;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + (rows * ch) / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.rowTitle;
+    const outline = svgEl("rect", { width: cw, height: ch, style: "fill: none; stroke: var(--text-1); stroke-width: 1.5; display: none" }, svg);
+    const tip = makeTooltip(plot);
+    svg.addEventListener("pointermove", (ev) => {
+      const box = svg.getBoundingClientRect();
+      const px = ev.clientX - box.left, py = ev.clientY - box.top;
+      const r = Math.floor((py - m.t) / ch);
+      let c = -1;
+      for (let j = 0; j < cols; j++) if (px >= cx(j) && px < cx(j) + cw + gap) { c = j; break; }
+      if (r < 0 || r >= rows || c < 0) { outline.style.display = "none"; hideTooltip(tip); return; }
+      outline.setAttribute("x", cx(c));
+      outline.setAttribute("y", m.t + r * ch);
+      outline.setAttribute("width", cw);
+      outline.style.display = "";
+      const rowsOut = [{ value: fmt(spec.fmt, spec.values[r][c]), label: spec.valueLabel || "" }];
+      if (spec.cellNotes) rowsOut.push({ value: "", label: spec.cellNotes[r][c] });
+      showTooltip(tip, plot, px, py, `${spec.rowName} ${spec.rows[r]} · ${spec.colName} ${spec.cols[c]}${spec.colSuffix ? spec.colSuffix[c] : ""}`, rowsOut);
+    });
+    svg.addEventListener("pointerleave", () => { outline.style.display = "none"; hideTooltip(tip); });
+    const scale = htmlEl("div", "scale", plot);
+    htmlEl("span", "", scale, fmt(spec.fmt, 0));
+    const ramp = htmlEl("span", "ramp", scale);
+    for (let i = 0; i < STEPS; i++) htmlEl("i", "", ramp).style.background = cssVar(`--seq-${i}`);
+    htmlEl("span", "", scale, `${fmt(spec.fmt, spec.vmax)}${spec.scale === "sqrt" ? " (square-root scale)" : ""}`);
+  };
+  const heatTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.rowName, ...spec.cols.map((c) => `${spec.colName} ${c}`)],
+    rows: spec.rows.map((r, i) => [r, ...spec.values[i].map((v) => fmt(spec.fmt, v))]),
+  });
+
+  // ---- mount -------------------------------------------------------------------------------
+  const RENDERERS = { line: [lineChart, lineTable, "line"], bars: [barChart, barTable, "rect"], heatmap: [heatmap, heatTable, null] };
+  const mounted = [];
+  const mount = (host) => {
+    const spec = payload.charts[host.dataset.chart];
+    if (!spec) { host.textContent = `missing chart ${host.dataset.chart}`; return; }
+    const [render, tabulate, legendKind] = RENDERERS[spec.type];
+    const fig = htmlEl("figure", "card", host);
+    const head = htmlEl("div", "card-head", fig);
+    const titles = htmlEl("div", "", head);
+    htmlEl("h3", "", titles, spec.title);
+    if (spec.subtitle) htmlEl("p", "subtitle", titles, spec.subtitle);
+    const toggle = htmlEl("button", "", head, "Table");
+    toggle.type = "button";
+    toggle.setAttribute("aria-pressed", "false");
+    if (legendKind) legendFor(fig, spec.series, legendKind);
+    const plot = htmlEl("div", "plot", fig);
+    const wrap = htmlEl("div", "table-wrap", fig);
+    wrap.hidden = true;
+    buildTable(wrap, tabulate(spec));
+    toggle.addEventListener("click", () => {
+      const showTable = wrap.hidden;
+      wrap.hidden = !showTable;
+      plot.hidden = showTable;
+      toggle.textContent = showTable ? "Chart" : "Table";
+      toggle.setAttribute("aria-pressed", String(showTable));
+    });
+    const draw = () => { plot.replaceChildren(); render(plot, spec); };
+    mounted.push(draw);
+    draw();
+  };
+  document.querySelectorAll("[data-chart]").forEach(mount);
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => mounted.forEach((draw) => draw()), 150);
+  });
+
+  const themeButton = document.getElementById("theme-toggle");
+  if (themeButton) {
+    const modes = ["auto", "light", "dark"];
+    themeButton.addEventListener("click", () => {
+      const current = document.documentElement.dataset.theme || "auto";
+      const next = modes[(modes.indexOf(current) + 1) % modes.length];
+      if (next === "auto") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = next;
+      themeButton.textContent = `Theme: ${next}`;
+    });
+  }
+})();
+</script>
+</body>
+</html>

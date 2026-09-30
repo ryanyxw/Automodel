@@ -17,8 +17,8 @@
 1. The padding methods rewrite only padding positions: real tokens, labels and (for hidden padding) masks
    are unchanged, and the draws are reproducible.
 2. Relabeling the experts of a Nemotron-V3-style MoE layer (sigmoid router with score-correction bias,
-   relu2 experts, shared expert) leaves its output unchanged, and the placement search spreads experts that
-   always receive the same tokens over different GPUs.
+   relu2 experts, shared expert) leaves its output unchanged, also with LoRA adapters on the experts
+   (main-v1.1), and the placement search spreads experts that always receive the same tokens over different GPUs.
 3. The router probe assigns token categories and computes the GPU load imbalance as documented.
 4. On the real training data, the collate functions produce the shapes and pad token the report describes.
 """
@@ -38,6 +38,7 @@ from padding_probe import summarize_routing, token_categories
 from torch import nn
 
 from nemo_automodel._transformers.auto_tokenizer import NeMoAutoTokenizer
+from nemo_automodel.components._peft.lora import patch_moe_module
 from nemo_automodel.components.datasets.llm.chat_dataset import ChatDatasetConfig
 from nemo_automodel.components.datasets.utils import default_collater
 from nemo_automodel.components.models.common import BackendConfig
@@ -108,9 +109,8 @@ class _Wrapper(nn.Module):
         self.layers = nn.ModuleDict({str(layer_id): nn.ModuleDict({"mixer": moe})})
 
 
-def test_relabeling_preserves_output() -> None:
-    """Relabeling experts, router rows and router bias together must not change the MoE output."""
-    torch.manual_seed(0)
+def _nemotron_style_moe() -> MoE:
+    """A small MoE layer shaped like Nemotron V3's: sigmoid router with score-correction bias, relu2 experts."""
     config = MoEConfig(
         dim=32,
         inter_dim=16,
@@ -140,11 +140,33 @@ def test_relabeling_preserves_output() -> None:
     with torch.no_grad():
         moe.init_weights(torch.device("cpu"), init_std=0.2)
         moe.gate.e_score_correction_bias.copy_(torch.randn(16) * 0.1)
+    return moe
+
+
+def test_relabeling_preserves_output() -> None:
+    """Relabeling experts, router rows and router bias together must not change the MoE output."""
+    torch.manual_seed(0)
+    moe = _nemotron_style_moe()
     x = torch.randn(2, 5, 32)
     expected = moe(x)
     new_to_old = torch.randperm(16).tolist()
     applied = apply_expert_placement(_Wrapper(moe, 7), {"layers": {"7": {"new_to_old": new_to_old}}})
     assert applied == [7]
+    torch.testing.assert_close(moe(x), expected, rtol=1e-5, atol=1e-6)
+
+
+def test_relabeling_preserves_output_with_lora() -> None:
+    """With LoRA adapters on the experts (main-v1.1), relabeling must move them too and keep the output."""
+    torch.manual_seed(0)
+    moe = _nemotron_style_moe()
+    moe.experts = patch_moe_module(moe.experts, dim=4, alpha=8)
+    with torch.no_grad():  # B starts at zero; make the adapters matter so a missed permutation would show
+        for name, param in moe.experts.named_parameters(recurse=False):
+            if name.startswith("lora_"):
+                param.copy_(torch.randn_like(param) * 0.3)
+    x = torch.randn(2, 5, 32)
+    expected = moe(x)
+    apply_expert_placement(_Wrapper(moe, 7), {"layers": {"7": {"new_to_old": torch.randperm(16).tolist()}}})
     torch.testing.assert_close(moe(x), expected, rtol=1e-5, atol=1e-6)
 
 
@@ -199,6 +221,7 @@ if __name__ == "__main__":
     test_random_pad_rewrites_only_padding()
     test_natural_pad_masked_and_visible()
     test_relabeling_preserves_output()
+    test_relabeling_preserves_output_with_lora()
     test_placement_spreads_hot_experts()
     test_probe_categories_and_imbalance()
     test_real_data_batches()

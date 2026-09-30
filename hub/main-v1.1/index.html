@@ -1,0 +1,1005 @@
+<!doctype html>
+<!-- Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+     Licensed under the Apache License, Version 2.0. Template for experiments/main-v1/make_report.py:
+     the generator fills Padding and MoE training speed, LoRA on 4 GPUs — main-v1.1, <header class="page">
+  <div>
+    <h1>Does what fills the padding change how fast an MoE model trains? LoRA on 4 GPUs</h1>
+    <p class="meta">main-v1.1 · Nemotron 3 Nano 30B-A3B · LoRA fine-tuning on Nemotron IF-Chat · 4× H100 · runs finished 2026-09-30</p>
+  </div>
+  <button id="theme-toggle" type="button">Theme: auto</button>
+</header>
+
+<p class="callout" style="margin-top:14px"><b>Why this experiment.</b> <a href="../main-v1/index.html">main-v1</a> asks the
+same question with full-parameter training on all 8 GPUs of a node, but one GPU's cooling failed before it finished.
+Full-parameter training of this 31.6B-parameter model does not fit on the 4 healthy GPUs, so main-v1.1 repeats the
+whole comparison with LoRA on 4 GPUs. It answers the same question in a second setup; its numbers are not
+interchangeable with main-v1's.</p>
+
+<div class="summary">
+<p><b>Question.</b> Conversations in a batch have different lengths, so the shorter ones are filled up with padding
+tokens. Nemotron 3 Nano's mixture-of-experts (MoE) layers compute on padding tokens like real ones, and with the
+standard padding they all go to the same few experts. Can we train faster by changing what the padding contains,
+or by moving experts between GPUs?</p>
+<p><b>Answer.</b> Yes, and the methods rank the same way as in main-v1, with about half the effect. With every
+micro-batch padded to 8,192 tokens (59% of the tokens are padding), visible natural text cut the
+step time by 11.0% and expert placement by 9.6%. With each micro-batch
+padded only to its longer conversation (30% padding), expert placement cut it by
+3.4% and the other methods by about 2%.</p>
+<ul>
+<li><b>Fixed length.</b> Default: 20.97 s per step. Natural text, visible:
+18.66 s (−11.0%). Expert placement: 18.96 s
+(−9.6%). Natural text, hidden: 19.70 s (−6.1%).
+Random tokens: 19.86 s (−5.3%). Two identical default runs differed by
++0.13%.</li>
+<li><b>Longest in batch.</b> Second pass: default 16.11 s per step, expert
+placement −3.4%, natural text hidden −1.9% and visible
+−1.9%, random tokens −1.7%. In the first pass, where one-time
+setup for new lengths more than doubles the step time (39.39 s), every method saves about 1%.</li>
+<li><b>Why the savings are smaller than in main-v1.</b> With the experts split over 4 GPUs instead of 8,
+the default's imbalance is milder: the busiest GPU does 1.56× the average GPU's expert work at fixed
+length, against 2.18× in main-v1, so there is less to fix. Within each setting, the method with
+the least uneven worst case is the fastest: visible natural text at fixed length, expert placement in the longest-in-batch
+setting.</li>
+<li><b>Padding less still beats every padding trick.</b> Longest-in-batch padding with the default method
+reaches 13.47% useful MFU in the second pass, more than the best fixed-length method
+(11.63%). No method changes what the model learns: per-step losses differ from the default by
+at most 0.0005.</li>
+</ul>
+</div>
+
+<nav class="toc"><a href="#setup">Setup</a> <a href="#results">Results</a> <a href="#compare">Compared with main-v1</a>
+<a href="#why">Why it helps</a> <a href="#steps">Every step</a> <a href="#caveats">Caveats</a> <a href="#reproduce">Reproduce</a></nav>
+
+<h2 id="setup">Setup</h2>
+<table class="kv panel">
+<tr><td>Model</td><td>NVIDIA Nemotron 3 Nano 30B-A3B (BF16). 52 layers: 23 MoE layers, 23 Mamba layers and 6
+attention layers. Each MoE layer has 128 experts (small feed-forward networks); a router sends every token to 6 of
+them, plus one shared expert that every token uses.</td></tr>
+<tr><td>Hardware</td><td>4 H100 80 GB GPUs (GPUs 4–7 of an 8-GPU node, all on one NUMA node).
+Each GPU holds 32 of the 128 experts of every MoE layer (expert parallelism): tokens travel to
+the GPUs that hold their experts and back, and each MoE layer waits for the GPU with the most work. All other
+weights are split across the 4 GPUs (FSDP2).</td></tr>
+<tr><td>Training</td><td>LoRA fine-tuning with AutoModel, using the settings of AutoModel's Nemotron Nano 3 LoRA
+example: rank-8 adapters on the attention, Mamba input and shared-expert layers (5.7 million trainable weights,
+0.02% of the model). Everything else, including the 128 routed experts per layer, stays frozen but still runs
+forward and backward. 128 conversations per optimizer step: each GPU runs 16 micro-batches of 2
+conversations. Adam, learning rate 10<sup>−5</sup> with warm-up and cosine decay, activation checkpointing, loss on
+assistant tokens only.</td></tr>
+<tr><td>Data</td><td>The same 5,120 conversations as main-v1, in the same order: drawn at random from
+<a href="https://huggingface.co/datasets/nvidia/Nemotron-Instruction-Following-Chat-v1">Nemotron-Instruction-Following-Chat-v1</a>
+(split <code>chat_if</code>, 426,009 conversations), formatted with the Nano 3 chat template and cut at
+8,192 tokens (12% are cut). Median length 2,392 tokens, mean
+3,364.</td></tr>
+<tr><td>Protocol</td><td>Every run starts from the same weights and trains on the same conversations in the same
+order, so step <i>n</i> of every run sees exactly the same data. Runs go one at a time on the same 4 GPUs, each
+after a 20-second load test of those GPUs. Fixed length: 40 steps (one pass over the data). Longest in batch: 80
+steps (two passes). In each setting the default method runs first and again last, to measure how much two
+identical runs differ.</td></tr>
+</table>
+
+<h3 style="margin-top:22px">Two padding settings</h3>
+<table class="plain panel">
+<tr><th>Setting</th><th>Each micro-batch is padded to</th><th class="num">Tokens per micro-batch (per GPU)</th><th class="num">Share that is padding</th></tr>
+<tr><td>Fixed length</td><td>8,192 tokens, the longest a conversation can be</td><td class="num">16,384</td><td class="num">59%</td></tr>
+<tr><td>Longest in batch</td><td>the length of its longer conversation</td><td class="num">9,676 on average</td><td class="num">30%</td></tr>
+</table>
+<p class="note">With longest-in-batch padding, micro-batch lengths vary. The first time a GPU sees a length, some
+kernels (attention in particular) build an execution plan for it. In the first pass over the data,
+74% of micro-batches have a length their GPU has not seen before, and a default step takes
+39.39 s. The second pass over the same data reuses the plans and takes
+16.11 s.</p>
+
+<h3>Five padding methods</h3>
+<table class="plain panel">
+<tr><th>Method</th><th>What the padding positions hold</th><th>Seen by attention and Mamba?</th></tr>
+<tr><td>Default</td><td>The token <code>&lt;|im_end|&gt;</code>, repeated (AutoModel's standard padding)</td><td>No</td></tr>
+<tr><td>Random tokens</td><td>A random ordinary token at each position</td><td>No</td></tr>
+<tr><td>Expert placement</td><td><code>&lt;|im_end|&gt;</code>, as in Default. In addition, each MoE layer's experts are
+rearranged across the 4 GPUs so that the heavily used ones sit on different GPUs.</td><td>No</td></tr>
+<tr><td>Natural text, hidden</td><td>A random stretch of text from other IF-Chat conversations (1,755
+conversations that are not in the training set)</td><td>No</td></tr>
+<tr><td>Natural text, visible</td><td>The same text</td><td>Yes</td></tr>
+</table>
+<p class="note">Padding never counts toward the loss, and it always comes after the real tokens. Attention only
+looks backward, so real tokens never see the padding, even when it is visible. Every method therefore trains the
+same model on the same loss: the largest per-step loss difference from the default is 0.0005. Expert
+placement only changes which GPU holds which expert, not what the model computes. It was computed from the
+default run's expert usage on this same data, so it is a best case.</p>
+
+<h3>How we measure</h3>
+<ul>
+<li><b>Step time</b>: wall-clock time of one optimizer step (16 micro-batches forward and
+backward, plus the update). The first 2 steps of each pass are left out because they include one-time setup.</li>
+<li><b>Useful MFU</b> (model FLOPs utilization): the arithmetic of full training for the real tokens only, divided by
+the step time and by the GPUs' peak BF16 throughput (989 TFLOP/s each). LoRA skips part of that arithmetic (the
+gradients of the frozen weights), so here MFU is a throughput measure in full-training units: comparable between
+methods, not with main-v1 and not a measure of how busy the GPUs are.</li>
+<li><b>Busiest GPU's expert work</b>: in each MoE layer and micro-batch, the token-to-expert assignments handled by
+the busiest GPU divided by the average GPU, averaged over layers and micro-batches. 1.0 is perfectly even; with 4
+GPUs, 4.0 would mean one GPU does all the expert work.</li>
+<li><b>Comparison</b>: every run sees the same data at every step, so each method is compared with the default
+run at the same steps. We report the mean of these per-step differences with a 95% confidence interval.</li>
+</ul>
+
+<h2 id="results">Results</h2>
+<div data-chart="effect"></div>
+<p class="figcaption">Each dot is a method's mean change in step time relative to the default method, over the
+same steps with the same data. Whiskers are 95% confidence intervals; a whisker that crosses zero means no
+detectable change. "Default, second run" repeats the default method and shows how much identical runs differ.
+The right-hand columns give the change and the default's and the method's step times.</p>
+
+<h3>All numbers</h3>
+<div class='panel table-wrap' style='max-height:none'><table class='plain'><tr><th>Setting</th><th>Method</th><th class='num'>Step time</th><th class='num'>Change vs default</th><th class='num'>Useful MFU</th><th class='num'>Padded MFU</th><th class='num'>Real tokens/s per GPU</th><th class='num'>Busiest GPU's expert work</th><th class='num'>Peak memory</th></tr><tr><td>Fixed length</td><td>Default</td><td class='num'>20.97 s</td><td class='num'>—</td><td class='num'>10.35%</td><td class='num'>25.43%</td><td class='num'>5,157</td><td class='num'>1.56× <span class='note'>(worst 3.10×)</span></td><td class='num'>32.1 GiB</td></tr><tr><td>Fixed length</td><td>Random tokens</td><td class='num'>19.86 s</td><td class='num'>−5.3% <span class='note'>(−5.7% to −4.9%)</span></td><td class='num'>10.93%</td><td class='num'>26.85%</td><td class='num'>5,446</td><td class='num'>1.35× <span class='note'>(worst 2.34×)</span></td><td class='num'>31.8 GiB</td></tr><tr><td>Fixed length</td><td>Expert placement</td><td class='num'>18.96 s</td><td class='num'>−9.6% <span class='note'>(−9.7% to −9.4%)</span></td><td class='num'>11.44%</td><td class='num'>28.12%</td><td class='num'>5,702</td><td class='num'>1.09× <span class='note'>(worst 1.70×)</span></td><td class='num'>30.1 GiB</td></tr><tr><td>Fixed length</td><td>Natural text, hidden</td><td class='num'>19.70 s</td><td class='num'>−6.1% <span class='note'>(−6.2% to −5.9%)</span></td><td class='num'>11.02%</td><td class='num'>27.07%</td><td class='num'>5,490</td><td class='num'>1.33× <span class='note'>(worst 2.40×)</span></td><td class='num'>32.0 GiB</td></tr><tr><td>Fixed length</td><td>Natural text, visible</td><td class='num'>18.66 s</td><td class='num'>−11.0% <span class='note'>(−11.2% to −10.8%)</span></td><td class='num'>11.63%</td><td class='num'>28.58%</td><td class='num'>5,795</td><td class='num'>1.11× <span class='note'>(worst 1.52×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Fixed length</td><td>Default, second run</td><td class='num'>20.99 s</td><td class='num'>+0.1% <span class='note'>(+0.0% to +0.2%)</span></td><td class='num'>10.34%</td><td class='num'>25.40%</td><td class='num'>5,151</td><td class='num'>1.56× <span class='note'>(worst 3.10×)</span></td><td class='num'>32.1 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Default</td><td class='num'>39.39 s</td><td class='num'>—</td><td class='num'>5.51%</td><td class='num'>7.92%</td><td class='num'>2,745</td><td class='num'>1.30× <span class='note'>(worst 2.08×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Random tokens</td><td class='num'>39.08 s</td><td class='num'>−0.8% <span class='note'>(−1.0% to −0.6%)</span></td><td class='num'>5.55%</td><td class='num'>7.98%</td><td class='num'>2,767</td><td class='num'>1.21× <span class='note'>(worst 1.81×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Expert placement</td><td class='num'>39.00 s</td><td class='num'>−1.0% <span class='note'>(−1.2% to −0.8%)</span></td><td class='num'>5.57%</td><td class='num'>8.00%</td><td class='num'>2,773</td><td class='num'>1.05× <span class='note'>(worst 1.24×)</span></td><td class='num'>29.6 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Natural text, hidden</td><td class='num'>39.12 s</td><td class='num'>−0.7% <span class='note'>(−0.8% to −0.6%)</span></td><td class='num'>5.55%</td><td class='num'>7.97%</td><td class='num'>2,764</td><td class='num'>1.20× <span class='note'>(worst 1.84×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Natural text, visible</td><td class='num'>39.10 s</td><td class='num'>−0.7% <span class='note'>(−1.0% to −0.5%)</span></td><td class='num'>5.55%</td><td class='num'>7.98%</td><td class='num'>2,766</td><td class='num'>1.12× <span class='note'>(worst 1.54×)</span></td><td class='num'>29.9 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Default, second run</td><td class='num'>39.33 s</td><td class='num'>−0.2% <span class='note'>(−0.4% to +0.1%)</span></td><td class='num'>5.52%</td><td class='num'>7.93%</td><td class='num'>2,749</td><td class='num'>1.30× <span class='note'>(worst 2.08×)</span></td><td class='num'>29.9 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Default</td><td class='num'>16.11 s</td><td class='num'>—</td><td class='num'>13.47%</td><td class='num'>19.37%</td><td class='num'>6,713</td><td class='num'>1.30× <span class='note'>(worst 2.08×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Random tokens</td><td class='num'>15.83 s</td><td class='num'>−1.7% <span class='note'>(−1.9% to −1.6%)</span></td><td class='num'>13.71%</td><td class='num'>19.71%</td><td class='num'>6,832</td><td class='num'>1.21× <span class='note'>(worst 1.81×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Expert placement</td><td class='num'>15.56 s</td><td class='num'>−3.4% <span class='note'>(−3.5% to −3.3%)</span></td><td class='num'>13.95%</td><td class='num'>20.05%</td><td class='num'>6,949</td><td class='num'>1.05× <span class='note'>(worst 1.33×)</span></td><td class='num'>29.6 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Natural text, hidden</td><td class='num'>15.80 s</td><td class='num'>−1.9% <span class='note'>(−2.0% to −1.8%)</span></td><td class='num'>13.74%</td><td class='num'>19.74%</td><td class='num'>6,844</td><td class='num'>1.20× <span class='note'>(worst 1.84×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Natural text, visible</td><td class='num'>15.80 s</td><td class='num'>−1.9% <span class='note'>(−2.1% to −1.7%)</span></td><td class='num'>13.74%</td><td class='num'>19.74%</td><td class='num'>6,843</td><td class='num'>1.12× <span class='note'>(worst 1.54×)</span></td><td class='num'>29.9 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Default, second run</td><td class='num'>16.13 s</td><td class='num'>+0.1% <span class='note'>(+0.0% to +0.3%)</span></td><td class='num'>13.46%</td><td class='num'>19.34%</td><td class='num'>6,705</td><td class='num'>1.30× <span class='note'>(worst 2.08×)</span></td><td class='num'>29.9 GiB</td></tr></table></div>
+<p class="note">Change vs default: mean per-step difference with its 95% interval. Busiest GPU's expert work:
+average over MoE layers and micro-batches; "worst" is the single most uneven layer and micro-batch. Peak memory:
+the fullest GPU.</p>
+
+<div data-chart="mfu"></div>
+<p class="figcaption">Useful MFU (higher is better; in full-training units, see <a href="#setup">How we
+measure</a>). Within a setting every run processes the same data, so useful MFU moves opposite to step time. Across
+settings it shows the larger lever: at fixed length 59% of the processed tokens are padding, and the
+best method reaches 11.63%. Padding each micro-batch only to its longer conversation reaches
+13.47% with default padding in the second pass, but only 5.51% in the
+first pass, while kernels are still being set up for new lengths.</p>
+
+<h2 id="compare">Compared with main-v1 (full-parameter, 8 GPUs)</h2>
+<table class="plain panel">
+<tr><th>Change in step time vs default</th><th class="num">main-v1: full-parameter, 8 GPUs</th><th class="num">main-v1.1: LoRA, 4 GPUs</th></tr>
+<tr><td colspan="3"><b>Fixed length</b></td></tr>
+<tr><td>Random tokens</td><td class="num">−10.1%</td><td class="num">−5.3%</td></tr>
+<tr><td>Expert placement</td><td class="num">−18.4%</td><td class="num">−9.6%</td></tr>
+<tr><td>Natural text, hidden</td><td class="num">−11.3%</td><td class="num">−6.1%</td></tr>
+<tr><td>Natural text, visible</td><td class="num">−22.9%</td><td class="num">−11.0%</td></tr>
+<tr><td colspan="3"><b>Longest in batch, second pass</b></td></tr>
+<tr><td>Random tokens</td><td class="num">−5.8%</td><td class="num">−1.7%</td></tr>
+<tr><td>Expert placement</td><td class="num">not measured (GPU fault)</td><td class="num">−3.4%</td></tr>
+<tr><td>Natural text, hidden</td><td class="num">not measured (GPU fault)</td><td class="num">−1.9%</td></tr>
+<tr><td>Natural text, visible</td><td class="num">not measured (GPU fault)</td><td class="num">−1.9%</td></tr>
+<tr><td colspan="3"><b>Busiest GPU's expert work, default method</b></td></tr>
+<tr><td>Fixed length</td><td class="num">2.18×</td><td class="num">1.56×</td></tr>
+<tr><td>Longest in batch</td><td class="num">1.64×</td><td class="num">1.30×</td></tr>
+</table>
+<p class="figcaption">Both setups rank the methods the same way at fixed length, and main-v1.1's savings
+are about half of main-v1's. Two things change between the setups (LoRA and the 4-way expert split), so this
+comparison cannot say how much each contributes. The milder default imbalance with 4 GPUs is consistent with the
+smaller savings: every method starts from less unevenness to remove. In main-v1, three longest-in-batch runs were
+lost to the GPU fault.</p>
+
+<h2 id="why">Why the methods help: how evenly the expert work is spread</h2>
+<div data-chart="imbalance"></div>
+<p class="figcaption">For each MoE layer and micro-batch: the expert work of the busiest GPU divided by the
+average GPU's, then averaged (1.0 is perfectly even; with 4 GPUs the worst possible is 4.0). With default padding,
+all padding tokens of a micro-batch go to the same 6 experts: 100% of their expert assignments land
+on the 6 most used experts of each layer, against 15% for real tokens. Random tokens and
+hidden natural text spread the padding over more experts (58% and 58% on
+the top 6). Expert placement puts the busy experts on different GPUs. Visible natural text is routed like real text
+(13% on the top 6). The average does not settle placement against visible natural text;
+the most uneven micro-batches ("worst" in the table) do: 1.52× against
+1.70× at fixed length, 1.33× against
+1.54× for longest in batch, matching which of the two is faster.</p>
+
+<h3>Where the expert work goes, fixed length (steps 3–40)</h3>
+<div class="grid3">
+<div data-chart="work_default"></div>
+<div data-chart="work_random"></div>
+<div data-chart="work_placement"></div>
+<div data-chart="work_natural_masked"></div>
+<div data-chart="work_natural_visible"></div>
+</div>
+<p class="figcaption">Each row is one MoE layer and each column one GPU. The color is the share of that layer's
+expert work (real and padding tokens together) that the GPU handled over steps 3–40; with 4 GPUs an even split is 25%
+per cell. <b>Default</b>: in the median layer the busiest GPU handles 39% of the work (up to
+60%) and the least busy 14%. <b>Random tokens</b> and <b>natural text,
+hidden</b>: 33% and 32% on the busiest GPU. <b>Expert placement</b>:
+26%, almost even. <b>Natural text, visible</b>: 27%.</p>
+
+<h2 id="steps">Step time at every step</h2>
+<div data-chart="steps_fixed"></div>
+<div data-chart="steps_batchmax"></div>
+<p class="figcaption">Step time at every step of every run. <b>(a) Fixed length</b>: after step 1 (one-time
+setup, not shown) the curves are flat and keep their order, and the second default run lies on top of the first.
+<b>(b) Longest in batch</b>: steps 1–40 (shaded) are the first pass, where 74% of micro-batches
+have a length their GPU has not seen before and a default step takes 39.39 s; steps 41–80
+repeat the same data and take 16.11 s.</p>
+
+<h2 id="caveats">Caveats</h2>
+<ul class="caveats">
+<li>This is a second setup, not a replacement for main-v1: LoRA instead of full-parameter training, and the
+experts split over 4 GPUs instead of 8. Both change how much of each step is expert work and how uneven it can be.</li>
+<li>Expert placement was computed from the default run's expert usage on the same data it was then tested on.
+That makes it a best case. A real system would have to plan from earlier batches.</li>
+<li>One run per method. Two identical default runs differed by +0.13%
+(+0.02% to +0.23%) at fixed length and by +0.13%
+(+0.00% to +0.26%) in the longest-in-batch second pass, well below every method's effect.</li>
+<li>These are short runs (40 and 80 steps) that measure speed, not model quality.</li>
+</ul>
+
+<h2 id="reproduce">Reproduce</h2>
+<pre>bash experiments/main-v1.1/run_all.sh          # checks, all runs in order on GPUs 4–7, this report
+bash experiments/main-v1.1/run_one.sh fixed_random fixed_random   # a single run</pre>
+<p class="note">Configs are in <code>experiments/main-v1.1/</code>; the data, recipe, collate functions and report
+code are main-v1's (<code>experiments/main-v1/</code>). Metrics are also in wandb, project <code>main-v1.1</code>.</p>
+<table class='plain'><tr><th>Run</th><th>Start (UTC)</th><th>End (UTC)</th><th class='num'>Steps</th><th class='num'>Steps left out (a GPU overheated)</th><th>Metrics</th></tr><tr><td><code>fixed_default</code></td><td>2026-09-29T20:10:39Z</td><td>2026-09-29T20:25:54Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/w32occt1'>wandb</a></td></tr><tr><td><code>fixed_random</code></td><td>2026-09-29T20:28:25Z</td><td>2026-09-29T20:43:01Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/b43yrble'>wandb</a></td></tr><tr><td><code>fixed_placement</code></td><td>2026-09-29T20:44:10Z</td><td>2026-09-29T20:58:05Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/t1jrivmq'>wandb</a></td></tr><tr><td><code>fixed_natural_masked</code></td><td>2026-09-29T21:08:34Z</td><td>2026-09-29T21:23:03Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/9p1il49y'>wandb</a></td></tr><tr><td><code>fixed_natural_visible</code></td><td>2026-09-29T21:24:27Z</td><td>2026-09-29T21:38:17Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/xpjrd6w4'>wandb</a></td></tr><tr><td><code>fixed_default_repeat</code></td><td>2026-09-29T21:39:45Z</td><td>2026-09-29T21:55:01Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/gl0966s4'>wandb</a></td></tr><tr><td><code>batchmax_default</code></td><td>2026-09-29T21:56:20Z</td><td>2026-09-29T22:34:42Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/6riwjqc9'>wandb</a></td></tr><tr><td><code>batchmax_random</code></td><td>2026-09-29T22:37:32Z</td><td>2026-09-29T23:15:36Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/6a7fp26y'>wandb</a></td></tr><tr><td><code>batchmax_placement</code></td><td>2026-09-29T23:16:55Z</td><td>2026-09-29T23:54:39Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/jbyqn4kb'>wandb</a></td></tr><tr><td><code>batchmax_natural_masked</code></td><td>2026-09-29T23:56:19Z</td><td>2026-09-30T00:34:25Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/c3193tjy'>wandb</a></td></tr><tr><td><code>batchmax_natural_visible</code></td><td>2026-09-30T00:35:44Z</td><td>2026-09-30T01:13:57Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/loi290e5'>wandb</a></td></tr><tr><td><code>batchmax_default_repeat</code></td><td>2026-09-30T01:15:26Z</td><td>2026-09-30T01:53:43Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/4a404vn2'>wandb</a></td></tr></table>
+ and {"charts": {"effect": {"type": "forest", "groups": [{"label": "Fixed length (steps 3\u201340)", "rows": [{"label": "Random tokens", "color": "--series-1", "mean": -5.298068014605404, "lo": -5.650875749407393, "hi": -4.9452602798034135, "valueLabel": "\u22125.3%", "valueLabel2": "20.97 \u2192 19.86 s", "tipHead": "Fixed length \u00b7 Random tokens", "tipRows": [{"value": "\u22125.30%", "label": "mean change in step time"}, {"value": "\u22125.65% to \u22124.95%", "label": "95% interval"}, {"value": "20.97 \u2192 19.86 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Expert placement", "color": "--series-2", "mean": -9.557566570475242, "lo": -9.722705045798948, "hi": -9.392428095151534, "valueLabel": "\u22129.6%", "valueLabel2": "20.97 \u2192 18.96 s", "tipHead": "Fixed length \u00b7 Expert placement", "tipRows": [{"value": "\u22129.56%", "label": "mean change in step time"}, {"value": "\u22129.72% to \u22129.39%", "label": "95% interval"}, {"value": "20.97 \u2192 18.96 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, hidden", "color": "--series-3", "mean": -6.061515640442448, "lo": -6.1983851978081255, "hi": -5.924646083076771, "valueLabel": "\u22126.1%", "valueLabel2": "20.97 \u2192 19.70 s", "tipHead": "Fixed length \u00b7 Natural text, hidden", "tipRows": [{"value": "\u22126.06%", "label": "mean change in step time"}, {"value": "\u22126.20% to \u22125.92%", "label": "95% interval"}, {"value": "20.97 \u2192 19.70 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, visible", "color": "--series-4", "mean": -11.010560778223345, "lo": -11.234589005546528, "hi": -10.78653255090016, "valueLabel": "\u221211.0%", "valueLabel2": "20.97 \u2192 18.66 s", "tipHead": "Fixed length \u00b7 Natural text, visible", "tipRows": [{"value": "\u221211.01%", "label": "mean change in step time"}, {"value": "\u221211.23% to \u221210.79%", "label": "95% interval"}, {"value": "20.97 \u2192 18.66 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Default, second run", "color": "--deemph", "mean": 0.1254438281751438, "lo": 0.01866489627757177, "hi": 0.23222276007271583, "valueLabel": "+0.1%", "valueLabel2": "20.97 \u2192 20.99 s", "tipHead": "Fixed length \u00b7 Default, second run", "tipRows": [{"value": "+0.13%", "label": "mean change in step time"}, {"value": "+0.02% to +0.23%", "label": "95% interval"}, {"value": "20.97 \u2192 20.99 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}]}, {"label": "Longest in batch, first pass (steps 3\u201340)", "rows": [{"label": "Random tokens", "color": "--series-1", "mean": -0.8033447857411562, "lo": -1.0390158338160635, "hi": -0.5676737376662488, "valueLabel": "\u22120.8%", "valueLabel2": "39.39 \u2192 39.08 s", "tipHead": "Longest in batch, first pass \u00b7 Random tokens", "tipRows": [{"value": "\u22120.80%", "label": "mean change in step time"}, {"value": "\u22121.04% to \u22120.57%", "label": "95% interval"}, {"value": "39.39 \u2192 39.08 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Expert placement", "color": "--series-2", "mean": -0.9999939992239698, "lo": -1.2032476978989737, "hi": -0.7967403005489657, "valueLabel": "\u22121.0%", "valueLabel2": "39.39 \u2192 39.00 s", "tipHead": "Longest in batch, first pass \u00b7 Expert placement", "tipRows": [{"value": "\u22121.00%", "label": "mean change in step time"}, {"value": "\u22121.20% to \u22120.80%", "label": "95% interval"}, {"value": "39.39 \u2192 39.00 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, hidden", "color": "--series-3", "mean": -0.699909025645308, "lo": -0.8486533655200925, "hi": -0.5511646857705235, "valueLabel": "\u22120.7%", "valueLabel2": "39.39 \u2192 39.12 s", "tipHead": "Longest in batch, first pass \u00b7 Natural text, hidden", "tipRows": [{"value": "\u22120.70%", "label": "mean change in step time"}, {"value": "\u22120.85% to \u22120.55%", "label": "95% interval"}, {"value": "39.39 \u2192 39.12 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, visible", "color": "--series-4", "mean": -0.7392529703671337, "lo": -0.9662175106822133, "hi": -0.5122884300520543, "valueLabel": "\u22120.7%", "valueLabel2": "39.39 \u2192 39.10 s", "tipHead": "Longest in batch, first pass \u00b7 Natural text, visible", "tipRows": [{"value": "\u22120.74%", "label": "mean change in step time"}, {"value": "\u22120.97% to \u22120.51%", "label": "95% interval"}, {"value": "39.39 \u2192 39.10 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Default, second run", "color": "--deemph", "mean": -0.1518242388768453, "lo": -0.3681394718393876, "hi": 0.06449099408569706, "valueLabel": "\u22120.2%", "valueLabel2": "39.39 \u2192 39.33 s", "tipHead": "Longest in batch, first pass \u00b7 Default, second run", "tipRows": [{"value": "\u22120.15%", "label": "mean change in step time"}, {"value": "\u22120.37% to +0.06%", "label": "95% interval"}, {"value": "39.39 \u2192 39.33 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}]}, {"label": "Longest in batch, second pass (steps 43\u201380)", "rows": [{"label": "Random tokens", "color": "--series-1", "mean": -1.7340578020311734, "lo": -1.8672355194834795, "hi": -1.600880084578867, "valueLabel": "\u22121.7%", "valueLabel2": "16.11 \u2192 15.83 s", "tipHead": "Longest in batch, second pass \u00b7 Random tokens", "tipRows": [{"value": "\u22121.73%", "label": "mean change in step time"}, {"value": "\u22121.87% to \u22121.60%", "label": "95% interval"}, {"value": "16.11 \u2192 15.83 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Expert placement", "color": "--series-2", "mean": -3.3912540426760027, "lo": -3.5273622299594507, "hi": -3.255145855392555, "valueLabel": "\u22123.4%", "valueLabel2": "16.11 \u2192 15.56 s", "tipHead": "Longest in batch, second pass \u00b7 Expert placement", "tipRows": [{"value": "\u22123.39%", "label": "mean change in step time"}, {"value": "\u22123.53% to \u22123.26%", "label": "95% interval"}, {"value": "16.11 \u2192 15.56 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, hidden", "color": "--series-3", "mean": -1.906201828530972, "lo": -2.016285643460463, "hi": -1.7961180136014812, "valueLabel": "\u22121.9%", "valueLabel2": "16.11 \u2192 15.80 s", "tipHead": "Longest in batch, second pass \u00b7 Natural text, hidden", "tipRows": [{"value": "\u22121.91%", "label": "mean change in step time"}, {"value": "\u22122.02% to \u22121.80%", "label": "95% interval"}, {"value": "16.11 \u2192 15.80 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, visible", "color": "--series-4", "mean": -1.896557906906993, "lo": -2.0797663645528752, "hi": -1.7133494492611105, "valueLabel": "\u22121.9%", "valueLabel2": "16.11 \u2192 15.80 s", "tipHead": "Longest in batch, second pass \u00b7 Natural text, visible", "tipRows": [{"value": "\u22121.90%", "label": "mean change in step time"}, {"value": "\u22122.08% to \u22121.71%", "label": "95% interval"}, {"value": "16.11 \u2192 15.80 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Default, second run", "color": "--deemph", "mean": 0.13313040200344958, "lo": 0.004223430035626009, "hi": 0.2620373739712732, "valueLabel": "+0.1%", "valueLabel2": "16.11 \u2192 16.13 s", "tipHead": "Longest in batch, second pass \u00b7 Default, second run", "tipRows": [{"value": "+0.13%", "label": "mean change in step time"}, {"value": "+0.00% to +0.26%", "label": "95% interval"}, {"value": "16.11 \u2192 16.13 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}]}], "x": {"label": "Change in step time vs the default method", "fmt": "pct0", "leftLabel": "\u2190 faster", "rightLabel": "slower \u2192"}, "valueTitles": ["Change", "Default \u2192 method"], "tableColumns": ["Setting", "Method", "Default (s)", "Method (s)", "Change", "95% interval", "Steps"], "tableRows": [["Fixed length", "Random tokens", "20.97", "19.86", "\u22125.30%", "\u22125.65% to \u22124.95%", "38"], ["Fixed length", "Expert placement", "20.97", "18.96", "\u22129.56%", "\u22129.72% to \u22129.39%", "38"], ["Fixed length", "Natural text, hidden", "20.97", "19.70", "\u22126.06%", "\u22126.20% to \u22125.92%", "38"], ["Fixed length", "Natural text, visible", "20.97", "18.66", "\u221211.01%", "\u221211.23% to \u221210.79%", "38"], ["Fixed length", "Default, second run", "20.97", "20.99", "+0.13%", "+0.02% to +0.23%", "38"], ["Longest in batch, first pass", "Random tokens", "39.39", "39.08", "\u22120.80%", "\u22121.04% to \u22120.57%", "38"], ["Longest in batch, first pass", "Expert placement", "39.39", "39.00", "\u22121.00%", "\u22121.20% to \u22120.80%", "38"], ["Longest in batch, first pass", "Natural text, hidden", "39.39", "39.12", "\u22120.70%", "\u22120.85% to \u22120.55%", "38"], ["Longest in batch, first pass", "Natural text, visible", "39.39", "39.10", "\u22120.74%", "\u22120.97% to \u22120.51%", "38"], ["Longest in batch, first pass", "Default, second run", "39.39", "39.33", "\u22120.15%", "\u22120.37% to +0.06%", "38"], ["Longest in batch, second pass", "Random tokens", "16.11", "15.83", "\u22121.73%", "\u22121.87% to \u22121.60%", "38"], ["Longest in batch, second pass", "Expert placement", "16.11", "15.56", "\u22123.39%", "\u22123.53% to \u22123.26%", "38"], ["Longest in batch, second pass", "Natural text, hidden", "16.11", "15.80", "\u22121.91%", "\u22122.02% to \u22121.80%", "38"], ["Longest in batch, second pass", "Natural text, visible", "16.11", "15.80", "\u22121.90%", "\u22122.08% to \u22121.71%", "38"], ["Longest in batch, second pass", "Default, second run", "16.11", "16.13", "+0.13%", "+0.00% to +0.26%", "38"]], "title": "Figure 1. Change in step time for each method", "subtitle": "Compared with the default method at the same steps (same data)"}, "mfu": {"type": "bars", "categories": ["Fixed length", "Longest in batch, first pass", "Longest in batch, second pass"], "series": [{"label": "Default", "color": "--deemph", "values": [10.35095406521843, 5.509646646687448, 13.47463741339168]}, {"label": "Random tokens", "color": "--series-1", "values": [10.930034739750404, 5.5542665574629915, 13.712418679348096]}, {"label": "Expert placement", "color": "--series-2", "values": [11.444798279652856, 5.5652993057841424, 13.947637224629718]}, {"label": "Natural text, hidden", "color": "--series-3", "values": [11.018864244817141, 5.548480965752964, 13.736482493865584]}, {"label": "Natural text, visible", "color": "--series-4", "values": [11.63166568498326, 5.5506802150528065, 13.73513214817196]}], "x": {"label": ""}, "y": {"label": "Useful MFU", "fmt": "pct2", "tickFmt": "pct0"}, "title": "Figure 2. Useful MFU by method", "subtitle": "Share of the GPUs' peak BF16 throughput spent on real tokens"}, "imbalance": {"type": "bars", "categories": ["Fixed length", "Longest in batch, first pass", "Longest in batch, second pass"], "series": [{"label": "Default", "color": "--deemph", "values": [1.5572489440941246, 1.3001564003505595, 1.2968302566812664]}, {"label": "Random tokens", "color": "--series-1", "values": [1.3455292034658377, 1.2063104765802306, 1.2062907566748653]}, {"label": "Expert placement", "color": "--series-2", "values": [1.0942993564154697, 1.0512541228832146, 1.0523232345930318]}, {"label": "Natural text, hidden", "color": "--series-3", "values": [1.3279259832281816, 1.1973696807785064, 1.1979164927052215]}, {"label": "Natural text, visible", "color": "--series-4", "values": [1.1137563405738906, 1.1231011713116639, 1.12292299587712]}], "x": {"label": ""}, "y": {"label": "Busiest GPU's expert work \u00f7 average", "fmt": "x2", "tickFmt": "x1"}, "refLine": {"value": 1.0, "label": "perfectly even"}, "title": "Figure 3. How uneven the expert work is", "subtitle": "Expert work on the busiest GPU \u00f7 the average GPU, averaged over MoE layers and micro-batches"}, "steps_fixed": {"type": "line", "series": [{"label": "Default", "color": "--deemph", "dash": false, "points": [[2, 20.888216937193647], [3, 21.082028419012204], [4, 20.862526669865474], [5, 20.845448890933767], [6, 20.95012361719273], [7, 20.807648568879813], [8, 20.76912696007639], [9, 20.808850853005424], [10, 20.885037960018963], [11, 20.871692556887865], [12, 21.477987739024684], [13, 20.92758669098839], [14, 20.75620084698312], [15, 20.907934688962996], [16, 21.025830358965322], [17, 20.99900284805335], [18, 20.867439018096775], [19, 21.037689646007493], [20, 20.985326147871092], [21, 20.88178838719614], [22, 21.52852041181177], [23, 20.945350445108488], [24, 21.07448732596822], [25, 21.01051794597879], [26, 21.032774144085124], [27, 20.97529406286776], [28, 20.879919982049614], [29, 20.904846975114197], [30, 20.88603179389611], [31, 21.132293211994693], [32, 21.37194052292034], [33, 21.070273047080263], [34, 20.967699594097212], [35, 20.967203642008826], [36, 21.058595394017175], [37, 20.824588392861187], [38, 20.93142341193743], [39, 20.782361070159823], [40, 20.67518353788182]]}, {"label": "Random tokens", "color": "--series-1", "dash": false, "points": [[2, 19.67620937107131], [3, 19.82743925601244], [4, 19.775781743926927], [5, 19.74092738307081], [6, 19.793466652045026], [7, 19.689274137839675], [8, 19.713701606029645], [9, 19.691984249977395], [10, 19.597091562114656], [11, 19.67789312894456], [12, 20.928419390926138], [13, 19.705410124966875], [14, 20.229053999995813], [15, 19.810888229170814], [16, 19.79466595686972], [17, 19.817197072086856], [18, 20.663184734992683], [19, 19.834095804020762], [20, 19.921259445836768], [21, 19.797483143163845], [22, 20.15722510102205], [23, 19.754278637934476], [24, 19.75594266410917], [25, 19.819507085951045], [26, 19.776195264887065], [27, 19.736840890021995], [28, 19.784813995938748], [29, 19.710755249019712], [30, 19.67710754601285], [31, 19.84742491110228], [32, 20.295626082923263], [33, 19.854014232987538], [34, 19.885119843063876], [35, 19.754687401931733], [36, 19.821577321039513], [37, 19.776857732096687], [38, 19.700482812011614], [39, 19.74458220298402], [40, 19.69297811901197]]}, {"label": "Expert placement", "color": "--series-2", "dash": false, "points": [[2, 18.804705176036805], [3, 18.993302626069635], [4, 18.941442369949073], [5, 18.882309404900298], [6, 18.92549318796955], [7, 18.84019591519609], [8, 18.88009923393838], [9, 18.803615401033312], [10, 18.73105519101955], [11, 18.821357490029186], [12, 19.64956032577902], [13, 18.810879258206114], [14, 18.77780953189358], [15, 19.005134290084243], [16, 18.95265059894882], [17, 18.921536087058485], [18, 18.85020041302778], [19, 19.036629794863984], [20, 19.10188304609619], [21, 18.882066032849252], [22, 19.347605402115732], [23, 18.9324562670663], [24, 18.852716749999672], [25, 18.974781140917912], [26, 18.930828555952758], [27, 18.907047685002908], [28, 18.919995615025982], [29, 18.80708968406543], [30, 18.814598789904267], [31, 19.026065605925396], [32, 19.463472807081416], [33, 19.003027935978025], [34, 19.13804935803637], [35, 18.898402352118865], [36, 18.99307487392798], [37, 18.944259631913155], [38, 19.002770421095192], [39, 18.94420182495378], [40, 18.90922383707948]]}, {"label": "Natural text, hidden", "color": "--series-3", "dash": false, "points": [[2, 19.570720478193834], [3, 19.742511365795508], [4, 19.70089648407884], [5, 19.62718911608681], [6, 19.67334108101204], [7, 19.571642291964963], [8, 19.594481291947886], [9, 19.623212252976373], [10, 19.510022667935118], [11, 19.55672099418007], [12, 20.21446366980672], [13, 19.56916026212275], [14, 19.50357991294004], [15, 19.702506717061624], [16, 19.692085973918438], [17, 19.696839506039396], [18, 19.63839043304324], [19, 19.738586738938466], [20, 19.851988445967436], [21, 19.685746713075787], [22, 20.154087506933138], [23, 19.651870295172557], [24, 19.636946852784604], [25, 19.709905852098018], [26, 19.667526210891083], [27, 19.63219769205898], [28, 19.67934901616536], [29, 19.600617597810924], [30, 19.555300869978964], [31, 19.75004595820792], [32, 20.220452793873847], [33, 19.74439425696619], [34, 19.80781948613003], [35, 19.632708127843216], [36, 19.684972654096782], [37, 19.642203262075782], [38, 19.572166277794167], [39, 19.656821399228647], [40, 19.579571911832318]]}, {"label": "Natural text, visible", "color": "--series-4", "dash": false, "points": [[2, 18.485015605110675], [3, 18.61673810495995], [4, 18.611930968007073], [5, 18.666551809059456], [6, 18.53313110792078], [7, 18.644132430898026], [8, 18.624264249112457], [9, 18.561674678931013], [10, 18.457340023946017], [11, 18.59127299510874], [12, 19.32710471795872], [13, 18.54044581297785], [14, 18.52672177995555], [15, 18.79611187009141], [16, 18.586527737090364], [17, 18.61857978790067], [18, 18.548525223042816], [19, 18.681133209960535], [20, 18.907254728022963], [21, 18.63582012988627], [22, 19.047093083150685], [23, 18.65663315099664], [24, 18.590209824964404], [25, 18.606649884022772], [26, 18.601822664029896], [27, 18.562334432965145], [28, 18.666138123953715], [29, 18.467063144082204], [30, 18.45128689496778], [31, 18.580359044019133], [32, 18.97168190497905], [33, 18.673737081931904], [34, 18.84777397592552], [35, 18.621870870003477], [36, 18.62788722408004], [37, 18.633388698101044], [38, 18.52363055292517], [39, 18.70221727504395], [40, 18.732848286861554]]}, {"label": "Default, second run", "color": "--deemph", "dash": true, "points": [[2, 20.89291098807007], [3, 21.11247818893753], [4, 20.900347664952278], [5, 20.870357348117977], [6, 20.987527071963996], [7, 20.75108706508763], [8, 20.801744120894], [9, 20.840998273110017], [10, 20.833621036959812], [11, 20.896108380984515], [12, 21.449028440983966], [13, 20.861783833010122], [14, 20.79368096892722], [15, 20.907991333166137], [16, 21.085263820830733], [17, 20.937171119032428], [18, 20.902850316138938], [19, 20.981419232906774], [20, 21.036675130948424], [21, 21.012201932026073], [22, 21.43676620302722], [23, 20.89921055105515], [24, 21.032297679921612], [25, 21.0538955910597], [26, 21.062904888996854], [27, 21.023021904053167], [28, 20.96618775394745], [29, 21.048794145928696], [30, 20.927667499985546], [31, 21.172701742034405], [32, 21.592197909019887], [33, 21.017750806873664], [34, 20.90303774899803], [35, 21.003065528115258], [36, 21.070569505915046], [37, 20.9510313521605], [38, 20.968673925846815], [39, 20.894380554091185], [40, 20.781582213006914]]}], "x": {"label": "Step", "fmt": "int"}, "y": {"label": "Step time (s)", "fmt": "s2", "tickFmt": "s0", "min": 0}, "height": 260, "endLabels": false, "title": "Figure 5a. Step time at every step: fixed length", "subtitle": "Step 1 (one-time setup) not shown"}, "steps_batchmax": {"type": "line", "series": [{"label": "Default", "color": "--deemph", "dash": false, "points": [[2, 40.32373240403831], [3, 39.397919388953596], [4, 40.00117413792759], [5, 39.8113010590896], [6, 39.246318430872634], [7, 38.99097268702462], [8, 40.13266679109074], [9, 39.79752432391979], [10, 38.47000270104036], [11, 38.97129563102499], [12, 41.73846170003526], [13, 39.41430835402571], [14, 38.54366217995994], [15, 40.090634708991274], [16, 38.75252441200428], [17, 39.53362968098372], [18, 39.8339945639018], [19, 38.02339101815596], [20, 40.20351547491737], [21, 39.806992802070454], [22, 40.98941250098869], [23, 39.39930635783821], [24, 39.69007176510058], [25, 39.06386486394331], [26, 39.31320989597589], [27, 38.87784372107126], [28, 39.92094311397523], [29, 39.018476511118934], [30, 38.408601433970034], [31, 38.505157322855666], [32, 40.24536729906686], [33, 39.00463252211921], [34, 39.92474255897105], [35, 38.96633110381663], [36, 38.879329418065026], [37, 39.50578725710511], [38, 38.70391248189844], [39, 39.30905875493772], [40, 38.400023732101545], [41, 16.596779393963516], [42, 15.682072737021372], [43, 15.205545956967399], [44, 16.330884697148576], [45, 16.24946550698951], [46, 15.408437372883782], [47, 16.867896059062332], [48, 16.602205466944724], [49, 16.131883837049827], [50, 14.485153411980718], [51, 15.53761829691939], [52, 18.02120014303364], [53, 16.00521437614225], [54, 15.086330581922084], [55, 17.095625997055322], [56, 15.191807287978008], [57, 16.158395524835214], [58, 15.54357514414005], [59, 16.319343996001408], [60, 17.252496156841516], [61, 16.615673932014033], [62, 17.22859075013548], [63, 16.303434629924595], [64, 16.30084605398588], [65, 15.770118369953707], [66, 15.953833943000063], [67, 15.358604561071843], [68, 16.752414972987026], [69, 15.471835426054895], [70, 15.066762842936441], [71, 15.05365346209146], [72, 16.97742349188775], [73, 15.78934918018058], [74, 17.149757055798545], [75, 15.819913102081046], [76, 15.840809140121564], [77, 16.363768360810354], [78, 15.428690253058448], [79, 16.37644195393659], [80, 16.94710289919749]]}, {"label": "Random tokens", "color": "--series-1", "dash": false, "points": [[2, 39.38926657498814], [3, 39.04378596507013], [4, 39.80652321502566], [5, 40.269563616020605], [6, 39.03358361404389], [7, 38.58692901604809], [8, 39.79688477399759], [9, 39.49160807998851], [10, 38.175541303819045], [11, 38.56899214000441], [12, 40.86839854810387], [13, 39.057390972040594], [14, 38.19779029185884], [15, 39.788048366084695], [16, 38.46531685907394], [17, 39.23953424091451], [18, 38.657320626080036], [19, 37.67997747194022], [20, 39.92777516809292], [21, 39.352739872876555], [22, 39.75239642499946], [23, 38.99666125699878], [24, 39.18143787304871], [25, 38.76522009703331], [26, 39.13111415086314], [27, 38.61882014409639], [28, 39.59904596908018], [29, 38.79378593782894], [30, 38.319461319129914], [31, 38.41385187488049], [32, 39.973480198998004], [33, 38.93161509698257], [34, 39.734477079007775], [35, 38.78087959694676], [36, 38.79502622014843], [37, 39.186494891066104], [38, 38.59016008395702], [39, 39.104952707886696], [40, 38.184619053965434], [41, 16.280975460074842], [42, 15.34852887201123], [43, 14.960197491105646], [44, 16.010990604991093], [45, 15.955410074908286], [46, 15.116822509095073], [47, 16.543511151801795], [48, 16.24627552810125], [49, 15.84562261402607], [50, 14.189550240058452], [51, 15.268171438015997], [52, 17.56931941397488], [53, 15.615543831838295], [54, 14.809325244044885], [55, 16.84026244096458], [56, 14.994385889964178], [57, 15.90086926217191], [58, 15.265898956917226], [59, 16.040198730072007], [60, 17.061828766018152], [61, 16.34333013999276], [62, 16.798480185912922], [63, 15.990243649110198], [64, 16.039029822917655], [65, 15.555367230903357], [66, 15.820142748067155], [67, 15.192371123936027], [68, 16.434985868167132], [69, 15.181050937855616], [70, 14.838042613118887], [71, 14.865312168840319], [72, 16.686109433183447], [73, 15.60121326893568], [74, 16.871043466962874], [75, 15.529542982112616], [76, 15.545481021981686], [77, 16.0957900818903], [78, 15.155194393126294], [79, 16.06381441000849], [80, 16.60786378895864]]}, {"label": "Expert placement", "color": "--series-2", "dash": false, "points": [[2, 39.2893968350254], [3, 39.11673935013823], [4, 39.7030343869701], [5, 39.51996609289199], [6, 38.96148173511028], [7, 38.47799980989657], [8, 39.66912435600534], [9, 39.29478190513328], [10, 38.04012083099224], [11, 38.53995118383318], [12, 41.26746019604616], [13, 38.92108304495923], [14, 38.684950998052955], [15, 39.63766783592291], [16, 38.551635719137266], [17, 39.16203524800949], [18, 38.60337383300066], [19, 37.520550264045596], [20, 39.86465442995541], [21, 39.41479665087536], [22, 39.84619404003024], [23, 38.946158511098474], [24, 39.099678511032835], [25, 38.70662350486964], [26, 39.01116506708786], [27, 38.4305533869192], [28, 39.450310667045414], [29, 38.71788765187375], [30, 38.17144527705386], [31, 38.19103944115341], [32, 39.77911975979805], [33, 38.77989622205496], [34, 39.43006008001976], [35, 38.66022735205479], [36, 38.61327899387106], [37, 39.65457533020526], [38, 38.331297986907884], [39, 39.09442681702785], [40, 38.052242388017476], [41, 16.06117903604172], [42, 15.106020513921976], [43, 14.788097962038592], [44, 15.72775635891594], [45, 15.65430271695368], [46, 14.874000864103436], [47, 16.231082760961726], [48, 15.989500137977302], [49, 15.52479997696355], [50, 14.005723332054913], [51, 14.99871409102343], [52, 17.343846767907962], [53, 15.367572148097679], [54, 14.563448616070673], [55, 16.50824614893645], [56, 14.777133102994412], [57, 15.60586969787255], [58, 14.986540723126382], [59, 15.764303572941571], [60, 16.77107778005302], [61, 16.02958775893785], [62, 16.574832132086158], [63, 15.724391297902912], [64, 15.755209433147684], [65, 15.301479335874319], [66, 15.432953631971031], [67, 14.888658835086972], [68, 16.158018893096596], [69, 14.971833031857386], [70, 14.597404079977423], [71, 14.619826209032908], [72, 16.39280184591189], [73, 15.318325849017128], [74, 16.636767787160352], [75, 15.290224181953818], [76, 15.261610585963354], [77, 15.849949357099831], [78, 14.920607351930812], [79, 15.790013026911765], [80, 16.309011959005147]]}, {"label": "Natural text, hidden", "color": "--series-3", "dash": false, "points": [[2, 39.36992060090415], [3, 39.331756885163486], [4, 39.97288159187883], [5, 39.64078964898363], [6, 39.04969412111677], [7, 38.675486576976255], [8, 39.82465367601253], [9, 39.59402315504849], [10, 38.29071195703], [11, 38.776411176892], [12, 40.95896520302631], [13, 39.19920960790478], [14, 38.35515912109986], [15, 39.75137051404454], [16, 38.66684648487717], [17, 39.24748791893944], [18, 38.76097567402758], [19, 37.84141906211153], [20, 40.038202333962545], [21, 39.45450465311296], [22, 40.67695234087296], [23, 39.19824005011469], [24, 39.37727116793394], [25, 38.80476119997911], [26, 39.15505567006767], [27, 38.60044617787935], [28, 39.64294033497572], [29, 38.68373226909898], [30, 38.146140365861356], [31, 38.2753810940776], [32, 39.95946018397808], [33, 38.78461526404135], [34, 39.58356325305067], [35, 38.75439017289318], [36, 38.63793235714547], [37, 39.19568526581861], [38, 38.495697383070365], [39, 38.91494811908342], [40, 38.09175787284039], [41, 16.275049010990188], [42, 15.311280373018235], [43, 14.928726569982246], [44, 16.002268139040098], [45, 15.93051401595585], [46, 15.104195803171024], [47, 16.490937182912603], [48, 16.21070329612121], [49, 15.787712570978329], [50, 14.164309025974944], [51, 15.239779158961028], [52, 17.58012323710136], [53, 15.5935323019512], [54, 14.773857875959948], [55, 16.77043399703689], [56, 15.009790029842407], [57, 15.841980819124728], [58, 15.247402105014771], [59, 16.02261722786352], [60, 17.000542648136616], [61, 16.27796555799432], [62, 16.895063160918653], [63, 15.977097918046638], [64, 15.993084847927094], [65, 15.52982187597081], [66, 15.646127972053364], [67, 15.1176532311365], [68, 16.418423669878393], [69, 15.13166343094781], [70, 14.802680948982015], [71, 14.87335377605632], [72, 16.654944986104965], [73, 15.564874012954533], [74, 16.849969591014087], [75, 15.547270707087591], [76, 15.51873218989931], [77, 16.105149334063753], [78, 15.143001012969762], [79, 16.05442538787611], [80, 16.594235556200147]]}, {"label": "Natural text, visible", "color": "--series-4", "dash": false, "points": [[2, 39.26402912312187], [3, 39.15463260281831], [4, 39.774040983989835], [5, 39.651263574138284], [6, 38.94520111894235], [7, 38.6304215870332], [8, 40.29074646695517], [9, 39.534211148973554], [10, 38.165635694982484], [11, 38.682255160063505], [12, 40.7073553330265], [13, 39.06160389096476], [14, 38.29530774708837], [15, 39.77316929004155], [16, 38.52179506700486], [17, 39.22968187998049], [18, 38.594231938011944], [19, 37.7884581068065], [20, 39.94584035198204], [21, 39.367226005066186], [22, 39.92650108109228], [23, 39.30682975589298], [24, 39.39742255117744], [25, 38.97526711388491], [26, 38.98570997500792], [27, 38.611624399898574], [28, 39.76696825004183], [29, 38.933811163995415], [30, 38.35139802703634], [31, 38.4712065521162], [32, 40.14084189082496], [33, 38.84644190315157], [34, 39.509166833013296], [35, 38.856643742881715], [36, 38.73602319112979], [37, 39.16532825282775], [38, 38.602527011185884], [39, 39.0352193498984], [40, 38.088576768990606], [41, 16.344955103006214], [42, 15.40077748708427], [43, 14.977608021814376], [44, 15.998832187149674], [45, 15.959963732864708], [46, 15.07775402115658], [47, 16.48745887284167], [48, 16.216050713090226], [49, 15.924640360055491], [50, 14.211689265910536], [51, 15.219248747918755], [52, 17.56430370011367], [53, 15.545768416952342], [54, 14.769037817139179], [55, 16.73131272289902], [56, 15.001220179023221], [57, 15.812883598031476], [58, 15.244903119048104], [59, 16.011577864876017], [60, 17.019896199926734], [61, 16.28415538207628], [62, 16.795368558960035], [63, 15.990401257993653], [64, 16.022070072125643], [65, 15.588049137964845], [66, 15.670125120086595], [67, 15.073686271905899], [68, 16.397401934023947], [69, 15.1556565919891], [70, 14.834672549040988], [71, 14.881388474954292], [72, 16.539797318866476], [73, 15.798307724995539], [74, 16.841022777138278], [75, 15.555234999861568], [76, 15.45883353613317], [77, 16.080899304011837], [78, 15.150957837933674], [79, 16.019474243046716], [80, 16.542339328909293]]}, {"label": "Default, second run", "color": "--deemph", "dash": true, "points": [[2, 39.49947201507166], [3, 39.26173587189987], [4, 40.02897212700918], [5, 39.81244804011658], [6, 39.25137034594081], [7, 39.00299306609668], [8, 40.15913875494152], [9, 39.740774020086974], [10, 38.34473707084544], [11, 38.74705756409094], [12, 41.14588169683702], [13, 39.372239486081526], [14, 38.51564773009159], [15, 40.05128165683709], [16, 38.71058008517139], [17, 39.54295370588079], [18, 38.87700545298867], [19, 38.13111730804667], [20, 40.16482526808977], [21, 39.736993324011564], [22, 40.282320961821824], [23, 39.50418161414564], [24, 39.609822529833764], [25, 39.02456007618457], [26, 39.40109430695884], [27, 38.720737722935155], [28, 39.98639479512349], [29, 38.85413638292812], [30, 38.447256630985066], [31, 38.439955034060404], [32, 40.31862285803072], [33, 39.03643312980421], [34, 39.79264324414544], [35, 39.004241266986355], [36, 38.95529504586011], [37, 39.35373548720963], [38, 38.81754066492431], [39, 40.07500938186422], [40, 38.39199262508191], [41, 16.63563086395152], [42, 15.629884041147307], [43, 15.155110734980553], [44, 16.310855618910864], [45, 16.257044604979455], [46, 15.395178666105494], [47, 16.888862419873476], [48, 16.58048194507137], [49, 16.086620135931298], [50, 14.483028463087976], [51, 15.600851088063791], [52, 18.35617059096694], [53, 15.935470352880657], [54, 15.081478177104145], [55, 17.131573129910976], [56, 15.200626339064911], [57, 16.137538289884105], [58, 15.501025785226375], [59, 16.348570722853765], [60, 17.27361621404998], [61, 16.620776494964957], [62, 17.346277137985453], [63, 16.273378855083138], [64, 16.323852165834978], [65, 15.80587482615374], [66, 15.992040606914088], [67, 15.371634574141353], [68, 16.767728646984324], [69, 15.51263435301371], [70, 15.099107182817534], [71, 15.067620153073221], [72, 17.01624244102277], [73, 15.82289831689559], [74, 17.176192871993408], [75, 15.828601283021271], [76, 15.882269797148183], [77, 16.382239460013807], [78, 15.489789956947789], [79, 16.425463553983718], [80, 16.948218978010118]]}], "x": {"label": "Step", "fmt": "int"}, "y": {"label": "Step time (s)", "fmt": "s2", "tickFmt": "s0", "min": 0}, "height": 260, "endLabels": false, "shade": [2, 40], "shadeLabel": "first pass", "title": "Figure 5b. Step time at every step: longest in batch", "subtitle": "Steps 1\u201340: first pass over the data; steps 41\u201380: second pass over the same data"}, "work_default": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.10003344636214406, 0.20304624657881887, 0.5973078660797655, 0.0996124409792716], [0.10442271567227547, 0.19783598916572437, 0.29689401911016094, 0.4008472760518392], [0.20607374425519975, 0.19112323041547807, 0.39792122338947494, 0.20488180193984717], [0.38899492380911843, 0.20315893491109213, 0.20571809902525784, 0.2021280422545316], [0.2966467413985938, 0.30788619058174, 0.09964726682294879, 0.29581980119671736], [0.3921739427666915, 0.303379263794213, 0.19833486121997498, 0.10611193221912049], [0.3051882543061909, 0.28610873222351074, 0.19169654762535765, 0.2170064658449407], [0.20981863925331518, 0.19302482354013542, 0.281824270884196, 0.31533226632235345], [0.2008596512309292, 0.19677747759902686, 0.11397536177384227, 0.4883875093962017], [0.31257690881427963, 0.18445156749926114, 0.20095810137296977, 0.30201342231348943], [0.29046658047458584, 0.2147494157155355, 0.27256903732032106, 0.22221496648955763], [0.30110421097069456, 0.39504087180422065, 0.10079379249037358, 0.20306112473471122], [0.17801647018968014, 0.30448066979123833, 0.3350351944304349, 0.1824676655886466], [0.19559710904171593, 0.41763474648458915, 0.15679144441035756, 0.22997670006333737], [0.3554229276222095, 0.192387999149791, 0.25228102583634227, 0.19990804739165724], [0.10248835463272898, 0.29126177754318505, 0.20249303600244356, 0.4037568318216424], [0.13171515130160147, 0.4495750393783837, 0.16680459808885006, 0.25190521123116477], [0.207770728228385, 0.3824852098498428, 0.2182863846159818, 0.1914576773057904], [0.30070333731801885, 0.2021283183181495, 0.40509576128240216, 0.09207258308142946], [0.2933000096103601, 0.15759893049273574, 0.4041035300806949, 0.14499752981620923], [0.2753407955169678, 0.3887943133973239, 0.1015494329887524, 0.23431545809695595], [0.1847033375187924, 0.2983381664543821, 0.30090772059925813, 0.21605077542756734], [0.09450806232920864, 0.494769389169258, 0.3147171547538356, 0.0960053937476978]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4a. Default", "subtitle": ""}, "work_random": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.23968384140416196, 0.25127147791678445, 0.25869613363031757, 0.25034854704873605], [0.19638755865264357, 0.3914128688343784, 0.228063470438907, 0.18413610207407097], [0.2580008172152335, 0.21152407662910327, 0.2720538900609602, 0.25842121609470303], [0.24883888478864702, 0.20863523399620726, 0.21855281528673673, 0.32397306592840897], [0.24320200033355177, 0.2605903859724078, 0.21141516953183895, 0.28479244416220145], [0.25058360685381975, 0.2796888100473504, 0.28469730678357574, 0.18503027631525407], [0.2851732781058864, 0.16948029869481138, 0.25903153837772835, 0.2863148848215739], [0.3729787500281083, 0.18495390289708188, 0.18237959292897007, 0.2596877541458398], [0.24285306010329932, 0.2513485875046044, 0.17965705771195262, 0.32614129468014363], [0.35503566055967095, 0.24512417274608947, 0.1458958157321863, 0.25394435096205326], [0.20814407080934758, 0.2323825526655766, 0.24291792668794332, 0.3165554498371325], [0.30988560224834244, 0.2672947791584751, 0.1672345002492269, 0.2555851183439556], [0.22256404056883694, 0.302709981014854, 0.24514026390878776, 0.22958571450752124], [0.1849627787606758, 0.3478456338246663, 0.21294967751753957, 0.25424190989711826], [0.36175698146485447, 0.20134619662636205, 0.24177520316943787, 0.1951216187393456], [0.23825582286767794, 0.1156536110660486, 0.3772177026982893, 0.26887286336798416], [0.16745721248158238, 0.32909589483026874, 0.25210290206106084, 0.25134399062708807], [0.2750070806135211, 0.2805489657217996, 0.26011457359581663, 0.18432938006886265], [0.3358794429845977, 0.20157957077026367, 0.3526058071538022, 0.10993517909133643], [0.20712809395371823, 0.15161406784726864, 0.45003959588837206, 0.1912182423106411], [0.31246384403161837, 0.34369220231708725, 0.11458097842701695, 0.22926297522427744], [0.14171955459996274, 0.2873615591149581, 0.3188520188917193, 0.2520668673933598], [0.12231808377985369, 0.47006828743114804, 0.311606670680799, 0.09600695810819927]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4b. Random tokens", "subtitle": ""}, "work_placement": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.21958877329240767, 0.21866380122669957, 0.28079660315262644, 0.28095082232826635], [0.22327450283786707, 0.22268144289652506, 0.27720635397392407, 0.2768377002916838], [0.23135732767874734, 0.23135901333992942, 0.26872452100118, 0.26855913798014325], [0.23738461210016618, 0.23763999604342276, 0.262400556028935, 0.2625748358274761], [0.23948004371241519, 0.23622500269036545, 0.2621092921809146, 0.2621856614163047], [0.24041730479190224, 0.2405775555393152, 0.2594311697441235, 0.2595739699246591], [0.24019651663930794, 0.24031697239792138, 0.25961688526889737, 0.25986962569387334], [0.2446606201038026, 0.2428425905997293, 0.25596042683250025, 0.2565363624639678], [0.24101168649238452, 0.24110223535905806, 0.2593434484381425, 0.258542629710415], [0.23868007827223392, 0.23769952121533847, 0.26190784521270216, 0.2617125552997254], [0.24097788543031926, 0.24219342700222082, 0.25775825768186333, 0.2590704298855966], [0.2408319732599091, 0.24031633661504379, 0.259463674143741, 0.2593880159813061], [0.23949893733911348, 0.24128849464550353, 0.2594941540768272, 0.2597184139385558], [0.27869334555508796, 0.272079070409139, 0.2759115235847339, 0.1733160604510391], [0.23813581884953014, 0.2375486691792806, 0.26234051637482225, 0.261974995596367], [0.236854168406704, 0.2350099756006609, 0.2645982148354514, 0.26353764115718376], [0.23671443420544006, 0.26327851362395704, 0.23607877262851648, 0.2639282795420864], [0.2342012472320021, 0.23508859935559726, 0.2652972079159921, 0.26541294549640854], [0.23771246274312338, 0.23796894675806948, 0.26206881121585246, 0.2622497792829547], [0.23442569950170683, 0.2323178575749983, 0.2665702083654571, 0.2666862345578378], [0.23612110238326223, 0.23412446390118516, 0.2649306623559249, 0.2648237713596277], [0.23910947013319583, 0.23772238011945757, 0.26127694364179643, 0.2618912061055501], [0.23220262611121462, 0.23140011753952294, 0.26833684402599667, 0.2680604123232657]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4c. Expert placement", "subtitle": ""}, "work_natural_masked": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.24743934263262832, 0.2489633225558097, 0.2658528068609405, 0.23774452795062148], [0.19205323855082193, 0.3935125292393199, 0.2231133778889974, 0.19132085432086074], [0.24376665500172398, 0.23447938550982558, 0.2598109328955935, 0.26194302659285695], [0.23577660426758884, 0.2068765079765989, 0.27450653544643466, 0.2828403523093776], [0.23351774717632093, 0.25215681812219454, 0.2243431618339137, 0.28998227286757083], [0.2622521634687457, 0.24048386540329247, 0.29903523963794376, 0.19822873149001807], [0.2723210987291838, 0.1711359651465165, 0.2570063733218009, 0.2995365628024988], [0.34097582833808765, 0.1881824585429409, 0.19345858640838087, 0.27738312671059057], [0.22068163804840624, 0.26126626081633986, 0.19740696120680423, 0.3206451399284497], [0.32083252020049513, 0.2517103939725642, 0.17313266218754284, 0.2543244236393979], [0.21346706256531833, 0.25480223120304574, 0.22985035913032398, 0.30188034710131195], [0.2942750663088079, 0.30576206090157493, 0.16922035551907724, 0.23074251727053993], [0.23382279329132616, 0.3052188848194323, 0.24517526961209482, 0.21578305227714673], [0.24011591442844324, 0.3260973294576009, 0.20594359699048495, 0.22784315912347092], [0.36377685111865665, 0.20838284492492676, 0.23207047111109683, 0.1957698328453198], [0.23449808672854774, 0.11566549853274696, 0.3752347670103374, 0.27460164772836787], [0.17388650827240526, 0.3270412704400849, 0.2572264713153504, 0.2418457499721594], [0.26312664935463353, 0.2739426629585132, 0.2728226770434463, 0.1901080106434069], [0.3344585226293196, 0.2020029017799779, 0.3609128332974618, 0.10262574229324073], [0.21071083922135203, 0.1537066802643893, 0.4416486422220866, 0.1939338382921721], [0.30092167017752663, 0.3509499650252493, 0.10746725400288899, 0.24066111079433508], [0.14334915813646817, 0.2819030577676338, 0.33069959858007597, 0.24404818551582202], [0.11201934647141841, 0.4811746321226421, 0.31080318752088043, 0.09600283388505902]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4d. Natural text, hidden", "subtitle": ""}, "work_natural_visible": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.2428849036233467, 0.2558594921178985, 0.26079042334305613, 0.24046518091569868], [0.25243245927911057, 0.24238206210889315, 0.24540600023771586, 0.25977947837428045], [0.26394413646898773, 0.2256392010471277, 0.25204578198884664, 0.2583708804950379], [0.23122936800906532, 0.2556871363991185, 0.26123762967293723, 0.2518458659188789], [0.24360674724244236, 0.2702848994941042, 0.24284855524698892, 0.2432597980164645], [0.23975098342226261, 0.26078511120980247, 0.2423418823041414, 0.2571220230637935], [0.26478169257180734, 0.2210545999961987, 0.22713717661405863, 0.28702653081793533], [0.266742091429861, 0.23530015192533793, 0.20864144961039224, 0.28931630703440886], [0.24827403352971664, 0.23901003285458214, 0.27706601745203924, 0.23564991616366202], [0.2832863665463632, 0.20943876316672877, 0.25066571068345456, 0.25660915960345354], [0.2308878354858934, 0.27532913392050223, 0.19134200664988735, 0.302441023943717], [0.25506158878928736, 0.24662016985709206, 0.24384526202553197, 0.2544729793280886], [0.1944582922416821, 0.25810265122798454, 0.2303901513417562, 0.3170489051885772], [0.241291882698996, 0.2693493993658769, 0.2574108316187273, 0.23194788631639982], [0.26855882427148653, 0.2298255259530586, 0.2556226839099014, 0.24599296586555347], [0.2439354051623428, 0.23771100713495621, 0.25358659342715617, 0.26476699427554484], [0.2184368602016516, 0.24021890707183302, 0.2807141814315528, 0.2606300512949626], [0.26640752742165014, 0.23820066452026367, 0.27073031141046894, 0.22466149664761728], [0.26123589800115216, 0.2501208740368224, 0.2639429109138355, 0.22470031704818993], [0.2606076734107837, 0.23929687968471594, 0.266679048538208, 0.23341639836629233], [0.2369511503922312, 0.23041437801561857, 0.245865499764158, 0.2867689718279922], [0.208720792803848, 0.2474534511566162, 0.256882951970686, 0.2869428040688498], [0.22757450321264433, 0.2509020002264726, 0.28906864450688946, 0.23245485205399363]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4e. Natural text, visible", "subtitle": ""}}}; charts render from the payload. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Padding and MoE training speed, LoRA on 4 GPUs — main-v1.1</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --text-1: #0b0b0b; --text-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11, 11, 11, 0.10); --shade: rgba(137, 135, 129, 0.12);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --accent: #4a3aa7; --deemph: #898781; --good: #006300; --critical: #d03b3b;
+  --seq-0: #cde2fb; --seq-1: #b7d3f6; --seq-2: #9ec5f4; --seq-3: #86b6ef; --seq-4: #6da7ec; --seq-5: #5598e7;
+  --seq-6: #3987e5; --seq-7: #2a78d6; --seq-8: #256abf; --seq-9: #1c5cab; --seq-10: #184f95; --seq-11: #104281;
+  --seq-12: #0d366b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --baseline: #383835; --border: rgba(255, 255, 255, 0.10); --shade: rgba(137, 135, 129, 0.16);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --accent: #9085e9; --deemph: #898781; --good: #0ca30c; --critical: #d03b3b;
+    --seq-0: #0d366b; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #2a78d6;
+    --seq-6: #3987e5; --seq-7: #5598e7; --seq-8: #6da7ec; --seq-9: #86b6ef; --seq-10: #9ec5f4; --seq-11: #b7d3f6;
+    --seq-12: #cde2fb;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --baseline: #383835; --border: rgba(255, 255, 255, 0.10); --shade: rgba(137, 135, 129, 0.16);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --accent: #9085e9; --deemph: #898781; --good: #0ca30c; --critical: #d03b3b;
+  --seq-0: #0d366b; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #2a78d6;
+  --seq-6: #3987e5; --seq-7: #5598e7; --seq-8: #6da7ec; --seq-9: #86b6ef; --seq-10: #9ec5f4; --seq-11: #b7d3f6;
+  --seq-12: #cde2fb;
+}
+* { box-sizing: border-box; }
+html { background: var(--page); }
+body {
+  margin: 0; color: var(--text-1); background: var(--page);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+header.page { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 8px; }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 6px; font-weight: 650; }
+h2 { font-size: 19px; margin: 40px 0 10px; font-weight: 650; }
+h3 { font-size: 15px; margin: 0; font-weight: 600; }
+p, li { color: var(--text-1); }
+.meta { color: var(--text-2); font-size: 13px; }
+.meta a, a { color: var(--series-1); }
+.lede { color: var(--text-2); max-width: 900px; }
+nav.toc { margin: 16px 0 8px; font-size: 13px; color: var(--text-2); }
+nav.toc a { margin-right: 14px; }
+button {
+  font: inherit; font-size: 13px; color: var(--text-2); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+button:hover { color: var(--text-1); }
+button:focus-visible, .plot:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.findings { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 22px; }
+.findings li { margin: 6px 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+.tile .label { color: var(--text-2); font-size: 13px; }
+.tile .row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.tile .key { width: 10px; height: 10px; border-radius: 2px; flex: none; align-self: center; }
+.tile .arm { color: var(--text-2); font-size: 12px; min-width: 104px; }
+.tile .value { font-size: 20px; font-weight: 600; white-space: nowrap; }
+.tile .sub { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tile .delta { color: var(--text-2); font-size: 12px; margin-top: 6px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; }
+figure.card { margin: 14px 0 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px 10px; }
+.card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.card-head .subtitle { color: var(--text-2); font-size: 13px; margin: 2px 0 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 2px; font-size: 13px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; }
+.legend i.line { width: 16px; height: 2px; border-radius: 1px; }
+.legend i.rect { width: 10px; height: 10px; border-radius: 2px; }
+.legend i.dash { width: 16px; height: 0; border-top: 2px dashed; background: none !important; }
+figcaption, .figcaption { color: var(--text-2); font-size: 13.5px; margin: 10px 2px 4px; max-width: 980px; }
+figcaption b, .figcaption b { color: var(--text-1); font-weight: 600; }
+.summary { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 22px; margin-top: 14px; }
+.summary p { margin: 8px 0; }
+table.plain { margin-top: 8px; }
+table.plain td, table.plain th { text-align: left; }
+table.plain td.num, table.plain th.num { text-align: right; }
+.caveats li { margin: 4px 0; color: var(--text-2); }
+.plot { position: relative; margin-top: 6px; }
+.plot svg { display: block; overflow: visible; }
+.plot text { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.plot text.label { fill: var(--text-2); font-size: 12px; }
+.tooltip {
+  position: absolute; pointer-events: none; background: var(--surface); color: var(--text-1);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); white-space: nowrap; z-index: 5; display: none;
+}
+.tooltip .t-head { color: var(--text-2); margin-bottom: 4px; }
+.tooltip .t-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+.tooltip .t-row i { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+.tooltip .t-row b { font-weight: 600; min-width: 56px; }
+.tooltip .t-row span { color: var(--text-2); }
+.table-wrap { max-height: 420px; overflow: auto; margin-top: 8px; }
+table { border-collapse: collapse; font-size: 13px; width: 100%; }
+th, td { text-align: right; padding: 5px 9px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+th { color: var(--text-2); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+th:first-child, td:first-child, th.text, td.text { text-align: left; }
+table.kv td:first-child { color: var(--text-2); width: 96px; vertical-align: top; }
+table.kv td { text-align: left; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px 10px; margin-top: 12px; }
+.scale { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.scale .ramp { display: flex; }
+.scale .ramp i { width: 18px; height: 10px; display: inline-block; }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
+pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.note { color: var(--text-2); font-size: 13px; }
+.callout { border-left: 3px solid var(--baseline); padding: 2px 12px; color: var(--text-2); }
+</style>
+</head>
+<body>
+<main>
+<header class="page">
+  <div>
+    <h1>Does what fills the padding change how fast an MoE model trains? LoRA on 4 GPUs</h1>
+    <p class="meta">main-v1.1 · Nemotron 3 Nano 30B-A3B · LoRA fine-tuning on Nemotron IF-Chat · 4× H100 · runs finished 2026-09-30</p>
+  </div>
+  <button id="theme-toggle" type="button">Theme: auto</button>
+</header>
+
+<p class="callout" style="margin-top:14px"><b>Why this experiment.</b> <a href="../main-v1/index.html">main-v1</a> asks the
+same question with full-parameter training on all 8 GPUs of a node, but one GPU's cooling failed before it finished.
+Full-parameter training of this 31.6B-parameter model does not fit on the 4 healthy GPUs, so main-v1.1 repeats the
+whole comparison with LoRA on 4 GPUs. It answers the same question in a second setup; its numbers are not
+interchangeable with main-v1's.</p>
+
+<div class="summary">
+<p><b>Question.</b> Conversations in a batch have different lengths, so the shorter ones are filled up with padding
+tokens. Nemotron 3 Nano's mixture-of-experts (MoE) layers compute on padding tokens like real ones, and with the
+standard padding they all go to the same few experts. Can we train faster by changing what the padding contains,
+or by moving experts between GPUs?</p>
+<p><b>Answer.</b> Yes, and the methods rank the same way as in main-v1, with about half the effect. With every
+micro-batch padded to 8,192 tokens (59% of the tokens are padding), visible natural text cut the
+step time by 11.0% and expert placement by 9.6%. With each micro-batch
+padded only to its longer conversation (30% padding), expert placement cut it by
+3.4% and the other methods by about 2%.</p>
+<ul>
+<li><b>Fixed length.</b> Default: 20.97 s per step. Natural text, visible:
+18.66 s (−11.0%). Expert placement: 18.96 s
+(−9.6%). Natural text, hidden: 19.70 s (−6.1%).
+Random tokens: 19.86 s (−5.3%). Two identical default runs differed by
++0.13%.</li>
+<li><b>Longest in batch.</b> Second pass: default 16.11 s per step, expert
+placement −3.4%, natural text hidden −1.9% and visible
+−1.9%, random tokens −1.7%. In the first pass, where one-time
+setup for new lengths more than doubles the step time (39.39 s), every method saves about 1%.</li>
+<li><b>Why the savings are smaller than in main-v1.</b> With the experts split over 4 GPUs instead of 8,
+the default's imbalance is milder: the busiest GPU does 1.56× the average GPU's expert work at fixed
+length, against 2.18× in main-v1, so there is less to fix. Within each setting, the method with
+the least uneven worst case is the fastest: visible natural text at fixed length, expert placement in the longest-in-batch
+setting.</li>
+<li><b>Padding less still beats every padding trick.</b> Longest-in-batch padding with the default method
+reaches 13.47% useful MFU in the second pass, more than the best fixed-length method
+(11.63%). No method changes what the model learns: per-step losses differ from the default by
+at most 0.0005.</li>
+</ul>
+</div>
+
+<nav class="toc"><a href="#setup">Setup</a> <a href="#results">Results</a> <a href="#compare">Compared with main-v1</a>
+<a href="#why">Why it helps</a> <a href="#steps">Every step</a> <a href="#caveats">Caveats</a> <a href="#reproduce">Reproduce</a></nav>
+
+<h2 id="setup">Setup</h2>
+<table class="kv panel">
+<tr><td>Model</td><td>NVIDIA Nemotron 3 Nano 30B-A3B (BF16). 52 layers: 23 MoE layers, 23 Mamba layers and 6
+attention layers. Each MoE layer has 128 experts (small feed-forward networks); a router sends every token to 6 of
+them, plus one shared expert that every token uses.</td></tr>
+<tr><td>Hardware</td><td>4 H100 80 GB GPUs (GPUs 4–7 of an 8-GPU node, all on one NUMA node).
+Each GPU holds 32 of the 128 experts of every MoE layer (expert parallelism): tokens travel to
+the GPUs that hold their experts and back, and each MoE layer waits for the GPU with the most work. All other
+weights are split across the 4 GPUs (FSDP2).</td></tr>
+<tr><td>Training</td><td>LoRA fine-tuning with AutoModel, using the settings of AutoModel's Nemotron Nano 3 LoRA
+example: rank-8 adapters on the attention, Mamba input and shared-expert layers (5.7 million trainable weights,
+0.02% of the model). Everything else, including the 128 routed experts per layer, stays frozen but still runs
+forward and backward. 128 conversations per optimizer step: each GPU runs 16 micro-batches of 2
+conversations. Adam, learning rate 10<sup>−5</sup> with warm-up and cosine decay, activation checkpointing, loss on
+assistant tokens only.</td></tr>
+<tr><td>Data</td><td>The same 5,120 conversations as main-v1, in the same order: drawn at random from
+<a href="https://huggingface.co/datasets/nvidia/Nemotron-Instruction-Following-Chat-v1">Nemotron-Instruction-Following-Chat-v1</a>
+(split <code>chat_if</code>, 426,009 conversations), formatted with the Nano 3 chat template and cut at
+8,192 tokens (12% are cut). Median length 2,392 tokens, mean
+3,364.</td></tr>
+<tr><td>Protocol</td><td>Every run starts from the same weights and trains on the same conversations in the same
+order, so step <i>n</i> of every run sees exactly the same data. Runs go one at a time on the same 4 GPUs, each
+after a 20-second load test of those GPUs. Fixed length: 40 steps (one pass over the data). Longest in batch: 80
+steps (two passes). In each setting the default method runs first and again last, to measure how much two
+identical runs differ.</td></tr>
+</table>
+
+<h3 style="margin-top:22px">Two padding settings</h3>
+<table class="plain panel">
+<tr><th>Setting</th><th>Each micro-batch is padded to</th><th class="num">Tokens per micro-batch (per GPU)</th><th class="num">Share that is padding</th></tr>
+<tr><td>Fixed length</td><td>8,192 tokens, the longest a conversation can be</td><td class="num">16,384</td><td class="num">59%</td></tr>
+<tr><td>Longest in batch</td><td>the length of its longer conversation</td><td class="num">9,676 on average</td><td class="num">30%</td></tr>
+</table>
+<p class="note">With longest-in-batch padding, micro-batch lengths vary. The first time a GPU sees a length, some
+kernels (attention in particular) build an execution plan for it. In the first pass over the data,
+74% of micro-batches have a length their GPU has not seen before, and a default step takes
+39.39 s. The second pass over the same data reuses the plans and takes
+16.11 s.</p>
+
+<h3>Five padding methods</h3>
+<table class="plain panel">
+<tr><th>Method</th><th>What the padding positions hold</th><th>Seen by attention and Mamba?</th></tr>
+<tr><td>Default</td><td>The token <code>&lt;|im_end|&gt;</code>, repeated (AutoModel's standard padding)</td><td>No</td></tr>
+<tr><td>Random tokens</td><td>A random ordinary token at each position</td><td>No</td></tr>
+<tr><td>Expert placement</td><td><code>&lt;|im_end|&gt;</code>, as in Default. In addition, each MoE layer's experts are
+rearranged across the 4 GPUs so that the heavily used ones sit on different GPUs.</td><td>No</td></tr>
+<tr><td>Natural text, hidden</td><td>A random stretch of text from other IF-Chat conversations (1,755
+conversations that are not in the training set)</td><td>No</td></tr>
+<tr><td>Natural text, visible</td><td>The same text</td><td>Yes</td></tr>
+</table>
+<p class="note">Padding never counts toward the loss, and it always comes after the real tokens. Attention only
+looks backward, so real tokens never see the padding, even when it is visible. Every method therefore trains the
+same model on the same loss: the largest per-step loss difference from the default is 0.0005. Expert
+placement only changes which GPU holds which expert, not what the model computes. It was computed from the
+default run's expert usage on this same data, so it is a best case.</p>
+
+<h3>How we measure</h3>
+<ul>
+<li><b>Step time</b>: wall-clock time of one optimizer step (16 micro-batches forward and
+backward, plus the update). The first 2 steps of each pass are left out because they include one-time setup.</li>
+<li><b>Useful MFU</b> (model FLOPs utilization): the arithmetic of full training for the real tokens only, divided by
+the step time and by the GPUs' peak BF16 throughput (989 TFLOP/s each). LoRA skips part of that arithmetic (the
+gradients of the frozen weights), so here MFU is a throughput measure in full-training units: comparable between
+methods, not with main-v1 and not a measure of how busy the GPUs are.</li>
+<li><b>Busiest GPU's expert work</b>: in each MoE layer and micro-batch, the token-to-expert assignments handled by
+the busiest GPU divided by the average GPU, averaged over layers and micro-batches. 1.0 is perfectly even; with 4
+GPUs, 4.0 would mean one GPU does all the expert work.</li>
+<li><b>Comparison</b>: every run sees the same data at every step, so each method is compared with the default
+run at the same steps. We report the mean of these per-step differences with a 95% confidence interval.</li>
+</ul>
+
+<h2 id="results">Results</h2>
+<div data-chart="effect"></div>
+<p class="figcaption">Each dot is a method's mean change in step time relative to the default method, over the
+same steps with the same data. Whiskers are 95% confidence intervals; a whisker that crosses zero means no
+detectable change. "Default, second run" repeats the default method and shows how much identical runs differ.
+The right-hand columns give the change and the default's and the method's step times.</p>
+
+<h3>All numbers</h3>
+<div class='panel table-wrap' style='max-height:none'><table class='plain'><tr><th>Setting</th><th>Method</th><th class='num'>Step time</th><th class='num'>Change vs default</th><th class='num'>Useful MFU</th><th class='num'>Padded MFU</th><th class='num'>Real tokens/s per GPU</th><th class='num'>Busiest GPU's expert work</th><th class='num'>Peak memory</th></tr><tr><td>Fixed length</td><td>Default</td><td class='num'>20.97 s</td><td class='num'>—</td><td class='num'>10.35%</td><td class='num'>25.43%</td><td class='num'>5,157</td><td class='num'>1.56× <span class='note'>(worst 3.10×)</span></td><td class='num'>32.1 GiB</td></tr><tr><td>Fixed length</td><td>Random tokens</td><td class='num'>19.86 s</td><td class='num'>−5.3% <span class='note'>(−5.7% to −4.9%)</span></td><td class='num'>10.93%</td><td class='num'>26.85%</td><td class='num'>5,446</td><td class='num'>1.35× <span class='note'>(worst 2.34×)</span></td><td class='num'>31.8 GiB</td></tr><tr><td>Fixed length</td><td>Expert placement</td><td class='num'>18.96 s</td><td class='num'>−9.6% <span class='note'>(−9.7% to −9.4%)</span></td><td class='num'>11.44%</td><td class='num'>28.12%</td><td class='num'>5,702</td><td class='num'>1.09× <span class='note'>(worst 1.70×)</span></td><td class='num'>30.1 GiB</td></tr><tr><td>Fixed length</td><td>Natural text, hidden</td><td class='num'>19.70 s</td><td class='num'>−6.1% <span class='note'>(−6.2% to −5.9%)</span></td><td class='num'>11.02%</td><td class='num'>27.07%</td><td class='num'>5,490</td><td class='num'>1.33× <span class='note'>(worst 2.40×)</span></td><td class='num'>32.0 GiB</td></tr><tr><td>Fixed length</td><td>Natural text, visible</td><td class='num'>18.66 s</td><td class='num'>−11.0% <span class='note'>(−11.2% to −10.8%)</span></td><td class='num'>11.63%</td><td class='num'>28.58%</td><td class='num'>5,795</td><td class='num'>1.11× <span class='note'>(worst 1.52×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Fixed length</td><td>Default, second run</td><td class='num'>20.99 s</td><td class='num'>+0.1% <span class='note'>(+0.0% to +0.2%)</span></td><td class='num'>10.34%</td><td class='num'>25.40%</td><td class='num'>5,151</td><td class='num'>1.56× <span class='note'>(worst 3.10×)</span></td><td class='num'>32.1 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Default</td><td class='num'>39.39 s</td><td class='num'>—</td><td class='num'>5.51%</td><td class='num'>7.92%</td><td class='num'>2,745</td><td class='num'>1.30× <span class='note'>(worst 2.08×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Random tokens</td><td class='num'>39.08 s</td><td class='num'>−0.8% <span class='note'>(−1.0% to −0.6%)</span></td><td class='num'>5.55%</td><td class='num'>7.98%</td><td class='num'>2,767</td><td class='num'>1.21× <span class='note'>(worst 1.81×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Expert placement</td><td class='num'>39.00 s</td><td class='num'>−1.0% <span class='note'>(−1.2% to −0.8%)</span></td><td class='num'>5.57%</td><td class='num'>8.00%</td><td class='num'>2,773</td><td class='num'>1.05× <span class='note'>(worst 1.24×)</span></td><td class='num'>29.6 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Natural text, hidden</td><td class='num'>39.12 s</td><td class='num'>−0.7% <span class='note'>(−0.8% to −0.6%)</span></td><td class='num'>5.55%</td><td class='num'>7.97%</td><td class='num'>2,764</td><td class='num'>1.20× <span class='note'>(worst 1.84×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Natural text, visible</td><td class='num'>39.10 s</td><td class='num'>−0.7% <span class='note'>(−1.0% to −0.5%)</span></td><td class='num'>5.55%</td><td class='num'>7.98%</td><td class='num'>2,766</td><td class='num'>1.12× <span class='note'>(worst 1.54×)</span></td><td class='num'>29.9 GiB</td></tr><tr><td>Longest in batch, first pass</td><td>Default, second run</td><td class='num'>39.33 s</td><td class='num'>−0.2% <span class='note'>(−0.4% to +0.1%)</span></td><td class='num'>5.52%</td><td class='num'>7.93%</td><td class='num'>2,749</td><td class='num'>1.30× <span class='note'>(worst 2.08×)</span></td><td class='num'>29.9 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Default</td><td class='num'>16.11 s</td><td class='num'>—</td><td class='num'>13.47%</td><td class='num'>19.37%</td><td class='num'>6,713</td><td class='num'>1.30× <span class='note'>(worst 2.08×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Random tokens</td><td class='num'>15.83 s</td><td class='num'>−1.7% <span class='note'>(−1.9% to −1.6%)</span></td><td class='num'>13.71%</td><td class='num'>19.71%</td><td class='num'>6,832</td><td class='num'>1.21× <span class='note'>(worst 1.81×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Expert placement</td><td class='num'>15.56 s</td><td class='num'>−3.4% <span class='note'>(−3.5% to −3.3%)</span></td><td class='num'>13.95%</td><td class='num'>20.05%</td><td class='num'>6,949</td><td class='num'>1.05× <span class='note'>(worst 1.33×)</span></td><td class='num'>29.6 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Natural text, hidden</td><td class='num'>15.80 s</td><td class='num'>−1.9% <span class='note'>(−2.0% to −1.8%)</span></td><td class='num'>13.74%</td><td class='num'>19.74%</td><td class='num'>6,844</td><td class='num'>1.20× <span class='note'>(worst 1.84×)</span></td><td class='num'>30.0 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Natural text, visible</td><td class='num'>15.80 s</td><td class='num'>−1.9% <span class='note'>(−2.1% to −1.7%)</span></td><td class='num'>13.74%</td><td class='num'>19.74%</td><td class='num'>6,843</td><td class='num'>1.12× <span class='note'>(worst 1.54×)</span></td><td class='num'>29.9 GiB</td></tr><tr><td>Longest in batch, second pass</td><td>Default, second run</td><td class='num'>16.13 s</td><td class='num'>+0.1% <span class='note'>(+0.0% to +0.3%)</span></td><td class='num'>13.46%</td><td class='num'>19.34%</td><td class='num'>6,705</td><td class='num'>1.30× <span class='note'>(worst 2.08×)</span></td><td class='num'>29.9 GiB</td></tr></table></div>
+<p class="note">Change vs default: mean per-step difference with its 95% interval. Busiest GPU's expert work:
+average over MoE layers and micro-batches; "worst" is the single most uneven layer and micro-batch. Peak memory:
+the fullest GPU.</p>
+
+<div data-chart="mfu"></div>
+<p class="figcaption">Useful MFU (higher is better; in full-training units, see <a href="#setup">How we
+measure</a>). Within a setting every run processes the same data, so useful MFU moves opposite to step time. Across
+settings it shows the larger lever: at fixed length 59% of the processed tokens are padding, and the
+best method reaches 11.63%. Padding each micro-batch only to its longer conversation reaches
+13.47% with default padding in the second pass, but only 5.51% in the
+first pass, while kernels are still being set up for new lengths.</p>
+
+<h2 id="compare">Compared with main-v1 (full-parameter, 8 GPUs)</h2>
+<table class="plain panel">
+<tr><th>Change in step time vs default</th><th class="num">main-v1: full-parameter, 8 GPUs</th><th class="num">main-v1.1: LoRA, 4 GPUs</th></tr>
+<tr><td colspan="3"><b>Fixed length</b></td></tr>
+<tr><td>Random tokens</td><td class="num">−10.1%</td><td class="num">−5.3%</td></tr>
+<tr><td>Expert placement</td><td class="num">−18.4%</td><td class="num">−9.6%</td></tr>
+<tr><td>Natural text, hidden</td><td class="num">−11.3%</td><td class="num">−6.1%</td></tr>
+<tr><td>Natural text, visible</td><td class="num">−22.9%</td><td class="num">−11.0%</td></tr>
+<tr><td colspan="3"><b>Longest in batch, second pass</b></td></tr>
+<tr><td>Random tokens</td><td class="num">−5.8%</td><td class="num">−1.7%</td></tr>
+<tr><td>Expert placement</td><td class="num">not measured (GPU fault)</td><td class="num">−3.4%</td></tr>
+<tr><td>Natural text, hidden</td><td class="num">not measured (GPU fault)</td><td class="num">−1.9%</td></tr>
+<tr><td>Natural text, visible</td><td class="num">not measured (GPU fault)</td><td class="num">−1.9%</td></tr>
+<tr><td colspan="3"><b>Busiest GPU's expert work, default method</b></td></tr>
+<tr><td>Fixed length</td><td class="num">2.18×</td><td class="num">1.56×</td></tr>
+<tr><td>Longest in batch</td><td class="num">1.64×</td><td class="num">1.30×</td></tr>
+</table>
+<p class="figcaption">Both setups rank the methods the same way at fixed length, and main-v1.1's savings
+are about half of main-v1's. Two things change between the setups (LoRA and the 4-way expert split), so this
+comparison cannot say how much each contributes. The milder default imbalance with 4 GPUs is consistent with the
+smaller savings: every method starts from less unevenness to remove. In main-v1, three longest-in-batch runs were
+lost to the GPU fault.</p>
+
+<h2 id="why">Why the methods help: how evenly the expert work is spread</h2>
+<div data-chart="imbalance"></div>
+<p class="figcaption">For each MoE layer and micro-batch: the expert work of the busiest GPU divided by the
+average GPU's, then averaged (1.0 is perfectly even; with 4 GPUs the worst possible is 4.0). With default padding,
+all padding tokens of a micro-batch go to the same 6 experts: 100% of their expert assignments land
+on the 6 most used experts of each layer, against 15% for real tokens. Random tokens and
+hidden natural text spread the padding over more experts (58% and 58% on
+the top 6). Expert placement puts the busy experts on different GPUs. Visible natural text is routed like real text
+(13% on the top 6). The average does not settle placement against visible natural text;
+the most uneven micro-batches ("worst" in the table) do: 1.52× against
+1.70× at fixed length, 1.33× against
+1.54× for longest in batch, matching which of the two is faster.</p>
+
+<h3>Where the expert work goes, fixed length (steps 3–40)</h3>
+<div class="grid3">
+<div data-chart="work_default"></div>
+<div data-chart="work_random"></div>
+<div data-chart="work_placement"></div>
+<div data-chart="work_natural_masked"></div>
+<div data-chart="work_natural_visible"></div>
+</div>
+<p class="figcaption">Each row is one MoE layer and each column one GPU. The color is the share of that layer's
+expert work (real and padding tokens together) that the GPU handled over steps 3–40; with 4 GPUs an even split is 25%
+per cell. <b>Default</b>: in the median layer the busiest GPU handles 39% of the work (up to
+60%) and the least busy 14%. <b>Random tokens</b> and <b>natural text,
+hidden</b>: 33% and 32% on the busiest GPU. <b>Expert placement</b>:
+26%, almost even. <b>Natural text, visible</b>: 27%.</p>
+
+<h2 id="steps">Step time at every step</h2>
+<div data-chart="steps_fixed"></div>
+<div data-chart="steps_batchmax"></div>
+<p class="figcaption">Step time at every step of every run. <b>(a) Fixed length</b>: after step 1 (one-time
+setup, not shown) the curves are flat and keep their order, and the second default run lies on top of the first.
+<b>(b) Longest in batch</b>: steps 1–40 (shaded) are the first pass, where 74% of micro-batches
+have a length their GPU has not seen before and a default step takes 39.39 s; steps 41–80
+repeat the same data and take 16.11 s.</p>
+
+<h2 id="caveats">Caveats</h2>
+<ul class="caveats">
+<li>This is a second setup, not a replacement for main-v1: LoRA instead of full-parameter training, and the
+experts split over 4 GPUs instead of 8. Both change how much of each step is expert work and how uneven it can be.</li>
+<li>Expert placement was computed from the default run's expert usage on the same data it was then tested on.
+That makes it a best case. A real system would have to plan from earlier batches.</li>
+<li>One run per method. Two identical default runs differed by +0.13%
+(+0.02% to +0.23%) at fixed length and by +0.13%
+(+0.00% to +0.26%) in the longest-in-batch second pass, well below every method's effect.</li>
+<li>These are short runs (40 and 80 steps) that measure speed, not model quality.</li>
+</ul>
+
+<h2 id="reproduce">Reproduce</h2>
+<pre>bash experiments/main-v1.1/run_all.sh          # checks, all runs in order on GPUs 4–7, this report
+bash experiments/main-v1.1/run_one.sh fixed_random fixed_random   # a single run</pre>
+<p class="note">Configs are in <code>experiments/main-v1.1/</code>; the data, recipe, collate functions and report
+code are main-v1's (<code>experiments/main-v1/</code>). Metrics are also in wandb, project <code>main-v1.1</code>.</p>
+<table class='plain'><tr><th>Run</th><th>Start (UTC)</th><th>End (UTC)</th><th class='num'>Steps</th><th class='num'>Steps left out (a GPU overheated)</th><th>Metrics</th></tr><tr><td><code>fixed_default</code></td><td>2026-09-29T20:10:39Z</td><td>2026-09-29T20:25:54Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/w32occt1'>wandb</a></td></tr><tr><td><code>fixed_random</code></td><td>2026-09-29T20:28:25Z</td><td>2026-09-29T20:43:01Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/b43yrble'>wandb</a></td></tr><tr><td><code>fixed_placement</code></td><td>2026-09-29T20:44:10Z</td><td>2026-09-29T20:58:05Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/t1jrivmq'>wandb</a></td></tr><tr><td><code>fixed_natural_masked</code></td><td>2026-09-29T21:08:34Z</td><td>2026-09-29T21:23:03Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/9p1il49y'>wandb</a></td></tr><tr><td><code>fixed_natural_visible</code></td><td>2026-09-29T21:24:27Z</td><td>2026-09-29T21:38:17Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/xpjrd6w4'>wandb</a></td></tr><tr><td><code>fixed_default_repeat</code></td><td>2026-09-29T21:39:45Z</td><td>2026-09-29T21:55:01Z</td><td class='num'>40</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/gl0966s4'>wandb</a></td></tr><tr><td><code>batchmax_default</code></td><td>2026-09-29T21:56:20Z</td><td>2026-09-29T22:34:42Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/6riwjqc9'>wandb</a></td></tr><tr><td><code>batchmax_random</code></td><td>2026-09-29T22:37:32Z</td><td>2026-09-29T23:15:36Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/6a7fp26y'>wandb</a></td></tr><tr><td><code>batchmax_placement</code></td><td>2026-09-29T23:16:55Z</td><td>2026-09-29T23:54:39Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/jbyqn4kb'>wandb</a></td></tr><tr><td><code>batchmax_natural_masked</code></td><td>2026-09-29T23:56:19Z</td><td>2026-09-30T00:34:25Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/c3193tjy'>wandb</a></td></tr><tr><td><code>batchmax_natural_visible</code></td><td>2026-09-30T00:35:44Z</td><td>2026-09-30T01:13:57Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/loi290e5'>wandb</a></td></tr><tr><td><code>batchmax_default_repeat</code></td><td>2026-09-30T01:15:26Z</td><td>2026-09-30T01:53:43Z</td><td class='num'>80</td><td class='num'>0</td><td><a href='https://wandb.ai/helloelwin/main-v1.1/runs/4a404vn2'>wandb</a></td></tr></table>
+
+</main>
+<script type="application/json" id="report-data">{"charts": {"effect": {"type": "forest", "groups": [{"label": "Fixed length (steps 3\u201340)", "rows": [{"label": "Random tokens", "color": "--series-1", "mean": -5.298068014605404, "lo": -5.650875749407393, "hi": -4.9452602798034135, "valueLabel": "\u22125.3%", "valueLabel2": "20.97 \u2192 19.86 s", "tipHead": "Fixed length \u00b7 Random tokens", "tipRows": [{"value": "\u22125.30%", "label": "mean change in step time"}, {"value": "\u22125.65% to \u22124.95%", "label": "95% interval"}, {"value": "20.97 \u2192 19.86 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Expert placement", "color": "--series-2", "mean": -9.557566570475242, "lo": -9.722705045798948, "hi": -9.392428095151534, "valueLabel": "\u22129.6%", "valueLabel2": "20.97 \u2192 18.96 s", "tipHead": "Fixed length \u00b7 Expert placement", "tipRows": [{"value": "\u22129.56%", "label": "mean change in step time"}, {"value": "\u22129.72% to \u22129.39%", "label": "95% interval"}, {"value": "20.97 \u2192 18.96 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, hidden", "color": "--series-3", "mean": -6.061515640442448, "lo": -6.1983851978081255, "hi": -5.924646083076771, "valueLabel": "\u22126.1%", "valueLabel2": "20.97 \u2192 19.70 s", "tipHead": "Fixed length \u00b7 Natural text, hidden", "tipRows": [{"value": "\u22126.06%", "label": "mean change in step time"}, {"value": "\u22126.20% to \u22125.92%", "label": "95% interval"}, {"value": "20.97 \u2192 19.70 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, visible", "color": "--series-4", "mean": -11.010560778223345, "lo": -11.234589005546528, "hi": -10.78653255090016, "valueLabel": "\u221211.0%", "valueLabel2": "20.97 \u2192 18.66 s", "tipHead": "Fixed length \u00b7 Natural text, visible", "tipRows": [{"value": "\u221211.01%", "label": "mean change in step time"}, {"value": "\u221211.23% to \u221210.79%", "label": "95% interval"}, {"value": "20.97 \u2192 18.66 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Default, second run", "color": "--deemph", "mean": 0.1254438281751438, "lo": 0.01866489627757177, "hi": 0.23222276007271583, "valueLabel": "+0.1%", "valueLabel2": "20.97 \u2192 20.99 s", "tipHead": "Fixed length \u00b7 Default, second run", "tipRows": [{"value": "+0.13%", "label": "mean change in step time"}, {"value": "+0.02% to +0.23%", "label": "95% interval"}, {"value": "20.97 \u2192 20.99 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}]}, {"label": "Longest in batch, first pass (steps 3\u201340)", "rows": [{"label": "Random tokens", "color": "--series-1", "mean": -0.8033447857411562, "lo": -1.0390158338160635, "hi": -0.5676737376662488, "valueLabel": "\u22120.8%", "valueLabel2": "39.39 \u2192 39.08 s", "tipHead": "Longest in batch, first pass \u00b7 Random tokens", "tipRows": [{"value": "\u22120.80%", "label": "mean change in step time"}, {"value": "\u22121.04% to \u22120.57%", "label": "95% interval"}, {"value": "39.39 \u2192 39.08 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Expert placement", "color": "--series-2", "mean": -0.9999939992239698, "lo": -1.2032476978989737, "hi": -0.7967403005489657, "valueLabel": "\u22121.0%", "valueLabel2": "39.39 \u2192 39.00 s", "tipHead": "Longest in batch, first pass \u00b7 Expert placement", "tipRows": [{"value": "\u22121.00%", "label": "mean change in step time"}, {"value": "\u22121.20% to \u22120.80%", "label": "95% interval"}, {"value": "39.39 \u2192 39.00 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, hidden", "color": "--series-3", "mean": -0.699909025645308, "lo": -0.8486533655200925, "hi": -0.5511646857705235, "valueLabel": "\u22120.7%", "valueLabel2": "39.39 \u2192 39.12 s", "tipHead": "Longest in batch, first pass \u00b7 Natural text, hidden", "tipRows": [{"value": "\u22120.70%", "label": "mean change in step time"}, {"value": "\u22120.85% to \u22120.55%", "label": "95% interval"}, {"value": "39.39 \u2192 39.12 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, visible", "color": "--series-4", "mean": -0.7392529703671337, "lo": -0.9662175106822133, "hi": -0.5122884300520543, "valueLabel": "\u22120.7%", "valueLabel2": "39.39 \u2192 39.10 s", "tipHead": "Longest in batch, first pass \u00b7 Natural text, visible", "tipRows": [{"value": "\u22120.74%", "label": "mean change in step time"}, {"value": "\u22120.97% to \u22120.51%", "label": "95% interval"}, {"value": "39.39 \u2192 39.10 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Default, second run", "color": "--deemph", "mean": -0.1518242388768453, "lo": -0.3681394718393876, "hi": 0.06449099408569706, "valueLabel": "\u22120.2%", "valueLabel2": "39.39 \u2192 39.33 s", "tipHead": "Longest in batch, first pass \u00b7 Default, second run", "tipRows": [{"value": "\u22120.15%", "label": "mean change in step time"}, {"value": "\u22120.37% to +0.06%", "label": "95% interval"}, {"value": "39.39 \u2192 39.33 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}]}, {"label": "Longest in batch, second pass (steps 43\u201380)", "rows": [{"label": "Random tokens", "color": "--series-1", "mean": -1.7340578020311734, "lo": -1.8672355194834795, "hi": -1.600880084578867, "valueLabel": "\u22121.7%", "valueLabel2": "16.11 \u2192 15.83 s", "tipHead": "Longest in batch, second pass \u00b7 Random tokens", "tipRows": [{"value": "\u22121.73%", "label": "mean change in step time"}, {"value": "\u22121.87% to \u22121.60%", "label": "95% interval"}, {"value": "16.11 \u2192 15.83 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Expert placement", "color": "--series-2", "mean": -3.3912540426760027, "lo": -3.5273622299594507, "hi": -3.255145855392555, "valueLabel": "\u22123.4%", "valueLabel2": "16.11 \u2192 15.56 s", "tipHead": "Longest in batch, second pass \u00b7 Expert placement", "tipRows": [{"value": "\u22123.39%", "label": "mean change in step time"}, {"value": "\u22123.53% to \u22123.26%", "label": "95% interval"}, {"value": "16.11 \u2192 15.56 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, hidden", "color": "--series-3", "mean": -1.906201828530972, "lo": -2.016285643460463, "hi": -1.7961180136014812, "valueLabel": "\u22121.9%", "valueLabel2": "16.11 \u2192 15.80 s", "tipHead": "Longest in batch, second pass \u00b7 Natural text, hidden", "tipRows": [{"value": "\u22121.91%", "label": "mean change in step time"}, {"value": "\u22122.02% to \u22121.80%", "label": "95% interval"}, {"value": "16.11 \u2192 15.80 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Natural text, visible", "color": "--series-4", "mean": -1.896557906906993, "lo": -2.0797663645528752, "hi": -1.7133494492611105, "valueLabel": "\u22121.9%", "valueLabel2": "16.11 \u2192 15.80 s", "tipHead": "Longest in batch, second pass \u00b7 Natural text, visible", "tipRows": [{"value": "\u22121.90%", "label": "mean change in step time"}, {"value": "\u22122.08% to \u22121.71%", "label": "95% interval"}, {"value": "16.11 \u2192 15.80 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}, {"label": "Default, second run", "color": "--deemph", "mean": 0.13313040200344958, "lo": 0.004223430035626009, "hi": 0.2620373739712732, "valueLabel": "+0.1%", "valueLabel2": "16.11 \u2192 16.13 s", "tipHead": "Longest in batch, second pass \u00b7 Default, second run", "tipRows": [{"value": "+0.13%", "label": "mean change in step time"}, {"value": "+0.00% to +0.26%", "label": "95% interval"}, {"value": "16.11 \u2192 16.13 s", "label": "default \u2192 this method"}, {"value": "38", "label": "paired steps"}]}]}], "x": {"label": "Change in step time vs the default method", "fmt": "pct0", "leftLabel": "\u2190 faster", "rightLabel": "slower \u2192"}, "valueTitles": ["Change", "Default \u2192 method"], "tableColumns": ["Setting", "Method", "Default (s)", "Method (s)", "Change", "95% interval", "Steps"], "tableRows": [["Fixed length", "Random tokens", "20.97", "19.86", "\u22125.30%", "\u22125.65% to \u22124.95%", "38"], ["Fixed length", "Expert placement", "20.97", "18.96", "\u22129.56%", "\u22129.72% to \u22129.39%", "38"], ["Fixed length", "Natural text, hidden", "20.97", "19.70", "\u22126.06%", "\u22126.20% to \u22125.92%", "38"], ["Fixed length", "Natural text, visible", "20.97", "18.66", "\u221211.01%", "\u221211.23% to \u221210.79%", "38"], ["Fixed length", "Default, second run", "20.97", "20.99", "+0.13%", "+0.02% to +0.23%", "38"], ["Longest in batch, first pass", "Random tokens", "39.39", "39.08", "\u22120.80%", "\u22121.04% to \u22120.57%", "38"], ["Longest in batch, first pass", "Expert placement", "39.39", "39.00", "\u22121.00%", "\u22121.20% to \u22120.80%", "38"], ["Longest in batch, first pass", "Natural text, hidden", "39.39", "39.12", "\u22120.70%", "\u22120.85% to \u22120.55%", "38"], ["Longest in batch, first pass", "Natural text, visible", "39.39", "39.10", "\u22120.74%", "\u22120.97% to \u22120.51%", "38"], ["Longest in batch, first pass", "Default, second run", "39.39", "39.33", "\u22120.15%", "\u22120.37% to +0.06%", "38"], ["Longest in batch, second pass", "Random tokens", "16.11", "15.83", "\u22121.73%", "\u22121.87% to \u22121.60%", "38"], ["Longest in batch, second pass", "Expert placement", "16.11", "15.56", "\u22123.39%", "\u22123.53% to \u22123.26%", "38"], ["Longest in batch, second pass", "Natural text, hidden", "16.11", "15.80", "\u22121.91%", "\u22122.02% to \u22121.80%", "38"], ["Longest in batch, second pass", "Natural text, visible", "16.11", "15.80", "\u22121.90%", "\u22122.08% to \u22121.71%", "38"], ["Longest in batch, second pass", "Default, second run", "16.11", "16.13", "+0.13%", "+0.00% to +0.26%", "38"]], "title": "Figure 1. Change in step time for each method", "subtitle": "Compared with the default method at the same steps (same data)"}, "mfu": {"type": "bars", "categories": ["Fixed length", "Longest in batch, first pass", "Longest in batch, second pass"], "series": [{"label": "Default", "color": "--deemph", "values": [10.35095406521843, 5.509646646687448, 13.47463741339168]}, {"label": "Random tokens", "color": "--series-1", "values": [10.930034739750404, 5.5542665574629915, 13.712418679348096]}, {"label": "Expert placement", "color": "--series-2", "values": [11.444798279652856, 5.5652993057841424, 13.947637224629718]}, {"label": "Natural text, hidden", "color": "--series-3", "values": [11.018864244817141, 5.548480965752964, 13.736482493865584]}, {"label": "Natural text, visible", "color": "--series-4", "values": [11.63166568498326, 5.5506802150528065, 13.73513214817196]}], "x": {"label": ""}, "y": {"label": "Useful MFU", "fmt": "pct2", "tickFmt": "pct0"}, "title": "Figure 2. Useful MFU by method", "subtitle": "Share of the GPUs' peak BF16 throughput spent on real tokens"}, "imbalance": {"type": "bars", "categories": ["Fixed length", "Longest in batch, first pass", "Longest in batch, second pass"], "series": [{"label": "Default", "color": "--deemph", "values": [1.5572489440941246, 1.3001564003505595, 1.2968302566812664]}, {"label": "Random tokens", "color": "--series-1", "values": [1.3455292034658377, 1.2063104765802306, 1.2062907566748653]}, {"label": "Expert placement", "color": "--series-2", "values": [1.0942993564154697, 1.0512541228832146, 1.0523232345930318]}, {"label": "Natural text, hidden", "color": "--series-3", "values": [1.3279259832281816, 1.1973696807785064, 1.1979164927052215]}, {"label": "Natural text, visible", "color": "--series-4", "values": [1.1137563405738906, 1.1231011713116639, 1.12292299587712]}], "x": {"label": ""}, "y": {"label": "Busiest GPU's expert work \u00f7 average", "fmt": "x2", "tickFmt": "x1"}, "refLine": {"value": 1.0, "label": "perfectly even"}, "title": "Figure 3. How uneven the expert work is", "subtitle": "Expert work on the busiest GPU \u00f7 the average GPU, averaged over MoE layers and micro-batches"}, "steps_fixed": {"type": "line", "series": [{"label": "Default", "color": "--deemph", "dash": false, "points": [[2, 20.888216937193647], [3, 21.082028419012204], [4, 20.862526669865474], [5, 20.845448890933767], [6, 20.95012361719273], [7, 20.807648568879813], [8, 20.76912696007639], [9, 20.808850853005424], [10, 20.885037960018963], [11, 20.871692556887865], [12, 21.477987739024684], [13, 20.92758669098839], [14, 20.75620084698312], [15, 20.907934688962996], [16, 21.025830358965322], [17, 20.99900284805335], [18, 20.867439018096775], [19, 21.037689646007493], [20, 20.985326147871092], [21, 20.88178838719614], [22, 21.52852041181177], [23, 20.945350445108488], [24, 21.07448732596822], [25, 21.01051794597879], [26, 21.032774144085124], [27, 20.97529406286776], [28, 20.879919982049614], [29, 20.904846975114197], [30, 20.88603179389611], [31, 21.132293211994693], [32, 21.37194052292034], [33, 21.070273047080263], [34, 20.967699594097212], [35, 20.967203642008826], [36, 21.058595394017175], [37, 20.824588392861187], [38, 20.93142341193743], [39, 20.782361070159823], [40, 20.67518353788182]]}, {"label": "Random tokens", "color": "--series-1", "dash": false, "points": [[2, 19.67620937107131], [3, 19.82743925601244], [4, 19.775781743926927], [5, 19.74092738307081], [6, 19.793466652045026], [7, 19.689274137839675], [8, 19.713701606029645], [9, 19.691984249977395], [10, 19.597091562114656], [11, 19.67789312894456], [12, 20.928419390926138], [13, 19.705410124966875], [14, 20.229053999995813], [15, 19.810888229170814], [16, 19.79466595686972], [17, 19.817197072086856], [18, 20.663184734992683], [19, 19.834095804020762], [20, 19.921259445836768], [21, 19.797483143163845], [22, 20.15722510102205], [23, 19.754278637934476], [24, 19.75594266410917], [25, 19.819507085951045], [26, 19.776195264887065], [27, 19.736840890021995], [28, 19.784813995938748], [29, 19.710755249019712], [30, 19.67710754601285], [31, 19.84742491110228], [32, 20.295626082923263], [33, 19.854014232987538], [34, 19.885119843063876], [35, 19.754687401931733], [36, 19.821577321039513], [37, 19.776857732096687], [38, 19.700482812011614], [39, 19.74458220298402], [40, 19.69297811901197]]}, {"label": "Expert placement", "color": "--series-2", "dash": false, "points": [[2, 18.804705176036805], [3, 18.993302626069635], [4, 18.941442369949073], [5, 18.882309404900298], [6, 18.92549318796955], [7, 18.84019591519609], [8, 18.88009923393838], [9, 18.803615401033312], [10, 18.73105519101955], [11, 18.821357490029186], [12, 19.64956032577902], [13, 18.810879258206114], [14, 18.77780953189358], [15, 19.005134290084243], [16, 18.95265059894882], [17, 18.921536087058485], [18, 18.85020041302778], [19, 19.036629794863984], [20, 19.10188304609619], [21, 18.882066032849252], [22, 19.347605402115732], [23, 18.9324562670663], [24, 18.852716749999672], [25, 18.974781140917912], [26, 18.930828555952758], [27, 18.907047685002908], [28, 18.919995615025982], [29, 18.80708968406543], [30, 18.814598789904267], [31, 19.026065605925396], [32, 19.463472807081416], [33, 19.003027935978025], [34, 19.13804935803637], [35, 18.898402352118865], [36, 18.99307487392798], [37, 18.944259631913155], [38, 19.002770421095192], [39, 18.94420182495378], [40, 18.90922383707948]]}, {"label": "Natural text, hidden", "color": "--series-3", "dash": false, "points": [[2, 19.570720478193834], [3, 19.742511365795508], [4, 19.70089648407884], [5, 19.62718911608681], [6, 19.67334108101204], [7, 19.571642291964963], [8, 19.594481291947886], [9, 19.623212252976373], [10, 19.510022667935118], [11, 19.55672099418007], [12, 20.21446366980672], [13, 19.56916026212275], [14, 19.50357991294004], [15, 19.702506717061624], [16, 19.692085973918438], [17, 19.696839506039396], [18, 19.63839043304324], [19, 19.738586738938466], [20, 19.851988445967436], [21, 19.685746713075787], [22, 20.154087506933138], [23, 19.651870295172557], [24, 19.636946852784604], [25, 19.709905852098018], [26, 19.667526210891083], [27, 19.63219769205898], [28, 19.67934901616536], [29, 19.600617597810924], [30, 19.555300869978964], [31, 19.75004595820792], [32, 20.220452793873847], [33, 19.74439425696619], [34, 19.80781948613003], [35, 19.632708127843216], [36, 19.684972654096782], [37, 19.642203262075782], [38, 19.572166277794167], [39, 19.656821399228647], [40, 19.579571911832318]]}, {"label": "Natural text, visible", "color": "--series-4", "dash": false, "points": [[2, 18.485015605110675], [3, 18.61673810495995], [4, 18.611930968007073], [5, 18.666551809059456], [6, 18.53313110792078], [7, 18.644132430898026], [8, 18.624264249112457], [9, 18.561674678931013], [10, 18.457340023946017], [11, 18.59127299510874], [12, 19.32710471795872], [13, 18.54044581297785], [14, 18.52672177995555], [15, 18.79611187009141], [16, 18.586527737090364], [17, 18.61857978790067], [18, 18.548525223042816], [19, 18.681133209960535], [20, 18.907254728022963], [21, 18.63582012988627], [22, 19.047093083150685], [23, 18.65663315099664], [24, 18.590209824964404], [25, 18.606649884022772], [26, 18.601822664029896], [27, 18.562334432965145], [28, 18.666138123953715], [29, 18.467063144082204], [30, 18.45128689496778], [31, 18.580359044019133], [32, 18.97168190497905], [33, 18.673737081931904], [34, 18.84777397592552], [35, 18.621870870003477], [36, 18.62788722408004], [37, 18.633388698101044], [38, 18.52363055292517], [39, 18.70221727504395], [40, 18.732848286861554]]}, {"label": "Default, second run", "color": "--deemph", "dash": true, "points": [[2, 20.89291098807007], [3, 21.11247818893753], [4, 20.900347664952278], [5, 20.870357348117977], [6, 20.987527071963996], [7, 20.75108706508763], [8, 20.801744120894], [9, 20.840998273110017], [10, 20.833621036959812], [11, 20.896108380984515], [12, 21.449028440983966], [13, 20.861783833010122], [14, 20.79368096892722], [15, 20.907991333166137], [16, 21.085263820830733], [17, 20.937171119032428], [18, 20.902850316138938], [19, 20.981419232906774], [20, 21.036675130948424], [21, 21.012201932026073], [22, 21.43676620302722], [23, 20.89921055105515], [24, 21.032297679921612], [25, 21.0538955910597], [26, 21.062904888996854], [27, 21.023021904053167], [28, 20.96618775394745], [29, 21.048794145928696], [30, 20.927667499985546], [31, 21.172701742034405], [32, 21.592197909019887], [33, 21.017750806873664], [34, 20.90303774899803], [35, 21.003065528115258], [36, 21.070569505915046], [37, 20.9510313521605], [38, 20.968673925846815], [39, 20.894380554091185], [40, 20.781582213006914]]}], "x": {"label": "Step", "fmt": "int"}, "y": {"label": "Step time (s)", "fmt": "s2", "tickFmt": "s0", "min": 0}, "height": 260, "endLabels": false, "title": "Figure 5a. Step time at every step: fixed length", "subtitle": "Step 1 (one-time setup) not shown"}, "steps_batchmax": {"type": "line", "series": [{"label": "Default", "color": "--deemph", "dash": false, "points": [[2, 40.32373240403831], [3, 39.397919388953596], [4, 40.00117413792759], [5, 39.8113010590896], [6, 39.246318430872634], [7, 38.99097268702462], [8, 40.13266679109074], [9, 39.79752432391979], [10, 38.47000270104036], [11, 38.97129563102499], [12, 41.73846170003526], [13, 39.41430835402571], [14, 38.54366217995994], [15, 40.090634708991274], [16, 38.75252441200428], [17, 39.53362968098372], [18, 39.8339945639018], [19, 38.02339101815596], [20, 40.20351547491737], [21, 39.806992802070454], [22, 40.98941250098869], [23, 39.39930635783821], [24, 39.69007176510058], [25, 39.06386486394331], [26, 39.31320989597589], [27, 38.87784372107126], [28, 39.92094311397523], [29, 39.018476511118934], [30, 38.408601433970034], [31, 38.505157322855666], [32, 40.24536729906686], [33, 39.00463252211921], [34, 39.92474255897105], [35, 38.96633110381663], [36, 38.879329418065026], [37, 39.50578725710511], [38, 38.70391248189844], [39, 39.30905875493772], [40, 38.400023732101545], [41, 16.596779393963516], [42, 15.682072737021372], [43, 15.205545956967399], [44, 16.330884697148576], [45, 16.24946550698951], [46, 15.408437372883782], [47, 16.867896059062332], [48, 16.602205466944724], [49, 16.131883837049827], [50, 14.485153411980718], [51, 15.53761829691939], [52, 18.02120014303364], [53, 16.00521437614225], [54, 15.086330581922084], [55, 17.095625997055322], [56, 15.191807287978008], [57, 16.158395524835214], [58, 15.54357514414005], [59, 16.319343996001408], [60, 17.252496156841516], [61, 16.615673932014033], [62, 17.22859075013548], [63, 16.303434629924595], [64, 16.30084605398588], [65, 15.770118369953707], [66, 15.953833943000063], [67, 15.358604561071843], [68, 16.752414972987026], [69, 15.471835426054895], [70, 15.066762842936441], [71, 15.05365346209146], [72, 16.97742349188775], [73, 15.78934918018058], [74, 17.149757055798545], [75, 15.819913102081046], [76, 15.840809140121564], [77, 16.363768360810354], [78, 15.428690253058448], [79, 16.37644195393659], [80, 16.94710289919749]]}, {"label": "Random tokens", "color": "--series-1", "dash": false, "points": [[2, 39.38926657498814], [3, 39.04378596507013], [4, 39.80652321502566], [5, 40.269563616020605], [6, 39.03358361404389], [7, 38.58692901604809], [8, 39.79688477399759], [9, 39.49160807998851], [10, 38.175541303819045], [11, 38.56899214000441], [12, 40.86839854810387], [13, 39.057390972040594], [14, 38.19779029185884], [15, 39.788048366084695], [16, 38.46531685907394], [17, 39.23953424091451], [18, 38.657320626080036], [19, 37.67997747194022], [20, 39.92777516809292], [21, 39.352739872876555], [22, 39.75239642499946], [23, 38.99666125699878], [24, 39.18143787304871], [25, 38.76522009703331], [26, 39.13111415086314], [27, 38.61882014409639], [28, 39.59904596908018], [29, 38.79378593782894], [30, 38.319461319129914], [31, 38.41385187488049], [32, 39.973480198998004], [33, 38.93161509698257], [34, 39.734477079007775], [35, 38.78087959694676], [36, 38.79502622014843], [37, 39.186494891066104], [38, 38.59016008395702], [39, 39.104952707886696], [40, 38.184619053965434], [41, 16.280975460074842], [42, 15.34852887201123], [43, 14.960197491105646], [44, 16.010990604991093], [45, 15.955410074908286], [46, 15.116822509095073], [47, 16.543511151801795], [48, 16.24627552810125], [49, 15.84562261402607], [50, 14.189550240058452], [51, 15.268171438015997], [52, 17.56931941397488], [53, 15.615543831838295], [54, 14.809325244044885], [55, 16.84026244096458], [56, 14.994385889964178], [57, 15.90086926217191], [58, 15.265898956917226], [59, 16.040198730072007], [60, 17.061828766018152], [61, 16.34333013999276], [62, 16.798480185912922], [63, 15.990243649110198], [64, 16.039029822917655], [65, 15.555367230903357], [66, 15.820142748067155], [67, 15.192371123936027], [68, 16.434985868167132], [69, 15.181050937855616], [70, 14.838042613118887], [71, 14.865312168840319], [72, 16.686109433183447], [73, 15.60121326893568], [74, 16.871043466962874], [75, 15.529542982112616], [76, 15.545481021981686], [77, 16.0957900818903], [78, 15.155194393126294], [79, 16.06381441000849], [80, 16.60786378895864]]}, {"label": "Expert placement", "color": "--series-2", "dash": false, "points": [[2, 39.2893968350254], [3, 39.11673935013823], [4, 39.7030343869701], [5, 39.51996609289199], [6, 38.96148173511028], [7, 38.47799980989657], [8, 39.66912435600534], [9, 39.29478190513328], [10, 38.04012083099224], [11, 38.53995118383318], [12, 41.26746019604616], [13, 38.92108304495923], [14, 38.684950998052955], [15, 39.63766783592291], [16, 38.551635719137266], [17, 39.16203524800949], [18, 38.60337383300066], [19, 37.520550264045596], [20, 39.86465442995541], [21, 39.41479665087536], [22, 39.84619404003024], [23, 38.946158511098474], [24, 39.099678511032835], [25, 38.70662350486964], [26, 39.01116506708786], [27, 38.4305533869192], [28, 39.450310667045414], [29, 38.71788765187375], [30, 38.17144527705386], [31, 38.19103944115341], [32, 39.77911975979805], [33, 38.77989622205496], [34, 39.43006008001976], [35, 38.66022735205479], [36, 38.61327899387106], [37, 39.65457533020526], [38, 38.331297986907884], [39, 39.09442681702785], [40, 38.052242388017476], [41, 16.06117903604172], [42, 15.106020513921976], [43, 14.788097962038592], [44, 15.72775635891594], [45, 15.65430271695368], [46, 14.874000864103436], [47, 16.231082760961726], [48, 15.989500137977302], [49, 15.52479997696355], [50, 14.005723332054913], [51, 14.99871409102343], [52, 17.343846767907962], [53, 15.367572148097679], [54, 14.563448616070673], [55, 16.50824614893645], [56, 14.777133102994412], [57, 15.60586969787255], [58, 14.986540723126382], [59, 15.764303572941571], [60, 16.77107778005302], [61, 16.02958775893785], [62, 16.574832132086158], [63, 15.724391297902912], [64, 15.755209433147684], [65, 15.301479335874319], [66, 15.432953631971031], [67, 14.888658835086972], [68, 16.158018893096596], [69, 14.971833031857386], [70, 14.597404079977423], [71, 14.619826209032908], [72, 16.39280184591189], [73, 15.318325849017128], [74, 16.636767787160352], [75, 15.290224181953818], [76, 15.261610585963354], [77, 15.849949357099831], [78, 14.920607351930812], [79, 15.790013026911765], [80, 16.309011959005147]]}, {"label": "Natural text, hidden", "color": "--series-3", "dash": false, "points": [[2, 39.36992060090415], [3, 39.331756885163486], [4, 39.97288159187883], [5, 39.64078964898363], [6, 39.04969412111677], [7, 38.675486576976255], [8, 39.82465367601253], [9, 39.59402315504849], [10, 38.29071195703], [11, 38.776411176892], [12, 40.95896520302631], [13, 39.19920960790478], [14, 38.35515912109986], [15, 39.75137051404454], [16, 38.66684648487717], [17, 39.24748791893944], [18, 38.76097567402758], [19, 37.84141906211153], [20, 40.038202333962545], [21, 39.45450465311296], [22, 40.67695234087296], [23, 39.19824005011469], [24, 39.37727116793394], [25, 38.80476119997911], [26, 39.15505567006767], [27, 38.60044617787935], [28, 39.64294033497572], [29, 38.68373226909898], [30, 38.146140365861356], [31, 38.2753810940776], [32, 39.95946018397808], [33, 38.78461526404135], [34, 39.58356325305067], [35, 38.75439017289318], [36, 38.63793235714547], [37, 39.19568526581861], [38, 38.495697383070365], [39, 38.91494811908342], [40, 38.09175787284039], [41, 16.275049010990188], [42, 15.311280373018235], [43, 14.928726569982246], [44, 16.002268139040098], [45, 15.93051401595585], [46, 15.104195803171024], [47, 16.490937182912603], [48, 16.21070329612121], [49, 15.787712570978329], [50, 14.164309025974944], [51, 15.239779158961028], [52, 17.58012323710136], [53, 15.5935323019512], [54, 14.773857875959948], [55, 16.77043399703689], [56, 15.009790029842407], [57, 15.841980819124728], [58, 15.247402105014771], [59, 16.02261722786352], [60, 17.000542648136616], [61, 16.27796555799432], [62, 16.895063160918653], [63, 15.977097918046638], [64, 15.993084847927094], [65, 15.52982187597081], [66, 15.646127972053364], [67, 15.1176532311365], [68, 16.418423669878393], [69, 15.13166343094781], [70, 14.802680948982015], [71, 14.87335377605632], [72, 16.654944986104965], [73, 15.564874012954533], [74, 16.849969591014087], [75, 15.547270707087591], [76, 15.51873218989931], [77, 16.105149334063753], [78, 15.143001012969762], [79, 16.05442538787611], [80, 16.594235556200147]]}, {"label": "Natural text, visible", "color": "--series-4", "dash": false, "points": [[2, 39.26402912312187], [3, 39.15463260281831], [4, 39.774040983989835], [5, 39.651263574138284], [6, 38.94520111894235], [7, 38.6304215870332], [8, 40.29074646695517], [9, 39.534211148973554], [10, 38.165635694982484], [11, 38.682255160063505], [12, 40.7073553330265], [13, 39.06160389096476], [14, 38.29530774708837], [15, 39.77316929004155], [16, 38.52179506700486], [17, 39.22968187998049], [18, 38.594231938011944], [19, 37.7884581068065], [20, 39.94584035198204], [21, 39.367226005066186], [22, 39.92650108109228], [23, 39.30682975589298], [24, 39.39742255117744], [25, 38.97526711388491], [26, 38.98570997500792], [27, 38.611624399898574], [28, 39.76696825004183], [29, 38.933811163995415], [30, 38.35139802703634], [31, 38.4712065521162], [32, 40.14084189082496], [33, 38.84644190315157], [34, 39.509166833013296], [35, 38.856643742881715], [36, 38.73602319112979], [37, 39.16532825282775], [38, 38.602527011185884], [39, 39.0352193498984], [40, 38.088576768990606], [41, 16.344955103006214], [42, 15.40077748708427], [43, 14.977608021814376], [44, 15.998832187149674], [45, 15.959963732864708], [46, 15.07775402115658], [47, 16.48745887284167], [48, 16.216050713090226], [49, 15.924640360055491], [50, 14.211689265910536], [51, 15.219248747918755], [52, 17.56430370011367], [53, 15.545768416952342], [54, 14.769037817139179], [55, 16.73131272289902], [56, 15.001220179023221], [57, 15.812883598031476], [58, 15.244903119048104], [59, 16.011577864876017], [60, 17.019896199926734], [61, 16.28415538207628], [62, 16.795368558960035], [63, 15.990401257993653], [64, 16.022070072125643], [65, 15.588049137964845], [66, 15.670125120086595], [67, 15.073686271905899], [68, 16.397401934023947], [69, 15.1556565919891], [70, 14.834672549040988], [71, 14.881388474954292], [72, 16.539797318866476], [73, 15.798307724995539], [74, 16.841022777138278], [75, 15.555234999861568], [76, 15.45883353613317], [77, 16.080899304011837], [78, 15.150957837933674], [79, 16.019474243046716], [80, 16.542339328909293]]}, {"label": "Default, second run", "color": "--deemph", "dash": true, "points": [[2, 39.49947201507166], [3, 39.26173587189987], [4, 40.02897212700918], [5, 39.81244804011658], [6, 39.25137034594081], [7, 39.00299306609668], [8, 40.15913875494152], [9, 39.740774020086974], [10, 38.34473707084544], [11, 38.74705756409094], [12, 41.14588169683702], [13, 39.372239486081526], [14, 38.51564773009159], [15, 40.05128165683709], [16, 38.71058008517139], [17, 39.54295370588079], [18, 38.87700545298867], [19, 38.13111730804667], [20, 40.16482526808977], [21, 39.736993324011564], [22, 40.282320961821824], [23, 39.50418161414564], [24, 39.609822529833764], [25, 39.02456007618457], [26, 39.40109430695884], [27, 38.720737722935155], [28, 39.98639479512349], [29, 38.85413638292812], [30, 38.447256630985066], [31, 38.439955034060404], [32, 40.31862285803072], [33, 39.03643312980421], [34, 39.79264324414544], [35, 39.004241266986355], [36, 38.95529504586011], [37, 39.35373548720963], [38, 38.81754066492431], [39, 40.07500938186422], [40, 38.39199262508191], [41, 16.63563086395152], [42, 15.629884041147307], [43, 15.155110734980553], [44, 16.310855618910864], [45, 16.257044604979455], [46, 15.395178666105494], [47, 16.888862419873476], [48, 16.58048194507137], [49, 16.086620135931298], [50, 14.483028463087976], [51, 15.600851088063791], [52, 18.35617059096694], [53, 15.935470352880657], [54, 15.081478177104145], [55, 17.131573129910976], [56, 15.200626339064911], [57, 16.137538289884105], [58, 15.501025785226375], [59, 16.348570722853765], [60, 17.27361621404998], [61, 16.620776494964957], [62, 17.346277137985453], [63, 16.273378855083138], [64, 16.323852165834978], [65, 15.80587482615374], [66, 15.992040606914088], [67, 15.371634574141353], [68, 16.767728646984324], [69, 15.51263435301371], [70, 15.099107182817534], [71, 15.067620153073221], [72, 17.01624244102277], [73, 15.82289831689559], [74, 17.176192871993408], [75, 15.828601283021271], [76, 15.882269797148183], [77, 16.382239460013807], [78, 15.489789956947789], [79, 16.425463553983718], [80, 16.948218978010118]]}], "x": {"label": "Step", "fmt": "int"}, "y": {"label": "Step time (s)", "fmt": "s2", "tickFmt": "s0", "min": 0}, "height": 260, "endLabels": false, "shade": [2, 40], "shadeLabel": "first pass", "title": "Figure 5b. Step time at every step: longest in batch", "subtitle": "Steps 1\u201340: first pass over the data; steps 41\u201380: second pass over the same data"}, "work_default": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.10003344636214406, 0.20304624657881887, 0.5973078660797655, 0.0996124409792716], [0.10442271567227547, 0.19783598916572437, 0.29689401911016094, 0.4008472760518392], [0.20607374425519975, 0.19112323041547807, 0.39792122338947494, 0.20488180193984717], [0.38899492380911843, 0.20315893491109213, 0.20571809902525784, 0.2021280422545316], [0.2966467413985938, 0.30788619058174, 0.09964726682294879, 0.29581980119671736], [0.3921739427666915, 0.303379263794213, 0.19833486121997498, 0.10611193221912049], [0.3051882543061909, 0.28610873222351074, 0.19169654762535765, 0.2170064658449407], [0.20981863925331518, 0.19302482354013542, 0.281824270884196, 0.31533226632235345], [0.2008596512309292, 0.19677747759902686, 0.11397536177384227, 0.4883875093962017], [0.31257690881427963, 0.18445156749926114, 0.20095810137296977, 0.30201342231348943], [0.29046658047458584, 0.2147494157155355, 0.27256903732032106, 0.22221496648955763], [0.30110421097069456, 0.39504087180422065, 0.10079379249037358, 0.20306112473471122], [0.17801647018968014, 0.30448066979123833, 0.3350351944304349, 0.1824676655886466], [0.19559710904171593, 0.41763474648458915, 0.15679144441035756, 0.22997670006333737], [0.3554229276222095, 0.192387999149791, 0.25228102583634227, 0.19990804739165724], [0.10248835463272898, 0.29126177754318505, 0.20249303600244356, 0.4037568318216424], [0.13171515130160147, 0.4495750393783837, 0.16680459808885006, 0.25190521123116477], [0.207770728228385, 0.3824852098498428, 0.2182863846159818, 0.1914576773057904], [0.30070333731801885, 0.2021283183181495, 0.40509576128240216, 0.09207258308142946], [0.2933000096103601, 0.15759893049273574, 0.4041035300806949, 0.14499752981620923], [0.2753407955169678, 0.3887943133973239, 0.1015494329887524, 0.23431545809695595], [0.1847033375187924, 0.2983381664543821, 0.30090772059925813, 0.21605077542756734], [0.09450806232920864, 0.494769389169258, 0.3147171547538356, 0.0960053937476978]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4a. Default", "subtitle": ""}, "work_random": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.23968384140416196, 0.25127147791678445, 0.25869613363031757, 0.25034854704873605], [0.19638755865264357, 0.3914128688343784, 0.228063470438907, 0.18413610207407097], [0.2580008172152335, 0.21152407662910327, 0.2720538900609602, 0.25842121609470303], [0.24883888478864702, 0.20863523399620726, 0.21855281528673673, 0.32397306592840897], [0.24320200033355177, 0.2605903859724078, 0.21141516953183895, 0.28479244416220145], [0.25058360685381975, 0.2796888100473504, 0.28469730678357574, 0.18503027631525407], [0.2851732781058864, 0.16948029869481138, 0.25903153837772835, 0.2863148848215739], [0.3729787500281083, 0.18495390289708188, 0.18237959292897007, 0.2596877541458398], [0.24285306010329932, 0.2513485875046044, 0.17965705771195262, 0.32614129468014363], [0.35503566055967095, 0.24512417274608947, 0.1458958157321863, 0.25394435096205326], [0.20814407080934758, 0.2323825526655766, 0.24291792668794332, 0.3165554498371325], [0.30988560224834244, 0.2672947791584751, 0.1672345002492269, 0.2555851183439556], [0.22256404056883694, 0.302709981014854, 0.24514026390878776, 0.22958571450752124], [0.1849627787606758, 0.3478456338246663, 0.21294967751753957, 0.25424190989711826], [0.36175698146485447, 0.20134619662636205, 0.24177520316943787, 0.1951216187393456], [0.23825582286767794, 0.1156536110660486, 0.3772177026982893, 0.26887286336798416], [0.16745721248158238, 0.32909589483026874, 0.25210290206106084, 0.25134399062708807], [0.2750070806135211, 0.2805489657217996, 0.26011457359581663, 0.18432938006886265], [0.3358794429845977, 0.20157957077026367, 0.3526058071538022, 0.10993517909133643], [0.20712809395371823, 0.15161406784726864, 0.45003959588837206, 0.1912182423106411], [0.31246384403161837, 0.34369220231708725, 0.11458097842701695, 0.22926297522427744], [0.14171955459996274, 0.2873615591149581, 0.3188520188917193, 0.2520668673933598], [0.12231808377985369, 0.47006828743114804, 0.311606670680799, 0.09600695810819927]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4b. Random tokens", "subtitle": ""}, "work_placement": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.21958877329240767, 0.21866380122669957, 0.28079660315262644, 0.28095082232826635], [0.22327450283786707, 0.22268144289652506, 0.27720635397392407, 0.2768377002916838], [0.23135732767874734, 0.23135901333992942, 0.26872452100118, 0.26855913798014325], [0.23738461210016618, 0.23763999604342276, 0.262400556028935, 0.2625748358274761], [0.23948004371241519, 0.23622500269036545, 0.2621092921809146, 0.2621856614163047], [0.24041730479190224, 0.2405775555393152, 0.2594311697441235, 0.2595739699246591], [0.24019651663930794, 0.24031697239792138, 0.25961688526889737, 0.25986962569387334], [0.2446606201038026, 0.2428425905997293, 0.25596042683250025, 0.2565363624639678], [0.24101168649238452, 0.24110223535905806, 0.2593434484381425, 0.258542629710415], [0.23868007827223392, 0.23769952121533847, 0.26190784521270216, 0.2617125552997254], [0.24097788543031926, 0.24219342700222082, 0.25775825768186333, 0.2590704298855966], [0.2408319732599091, 0.24031633661504379, 0.259463674143741, 0.2593880159813061], [0.23949893733911348, 0.24128849464550353, 0.2594941540768272, 0.2597184139385558], [0.27869334555508796, 0.272079070409139, 0.2759115235847339, 0.1733160604510391], [0.23813581884953014, 0.2375486691792806, 0.26234051637482225, 0.261974995596367], [0.236854168406704, 0.2350099756006609, 0.2645982148354514, 0.26353764115718376], [0.23671443420544006, 0.26327851362395704, 0.23607877262851648, 0.2639282795420864], [0.2342012472320021, 0.23508859935559726, 0.2652972079159921, 0.26541294549640854], [0.23771246274312338, 0.23796894675806948, 0.26206881121585246, 0.2622497792829547], [0.23442569950170683, 0.2323178575749983, 0.2665702083654571, 0.2666862345578378], [0.23612110238326223, 0.23412446390118516, 0.2649306623559249, 0.2648237713596277], [0.23910947013319583, 0.23772238011945757, 0.26127694364179643, 0.2618912061055501], [0.23220262611121462, 0.23140011753952294, 0.26833684402599667, 0.2680604123232657]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4c. Expert placement", "subtitle": ""}, "work_natural_masked": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.24743934263262832, 0.2489633225558097, 0.2658528068609405, 0.23774452795062148], [0.19205323855082193, 0.3935125292393199, 0.2231133778889974, 0.19132085432086074], [0.24376665500172398, 0.23447938550982558, 0.2598109328955935, 0.26194302659285695], [0.23577660426758884, 0.2068765079765989, 0.27450653544643466, 0.2828403523093776], [0.23351774717632093, 0.25215681812219454, 0.2243431618339137, 0.28998227286757083], [0.2622521634687457, 0.24048386540329247, 0.29903523963794376, 0.19822873149001807], [0.2723210987291838, 0.1711359651465165, 0.2570063733218009, 0.2995365628024988], [0.34097582833808765, 0.1881824585429409, 0.19345858640838087, 0.27738312671059057], [0.22068163804840624, 0.26126626081633986, 0.19740696120680423, 0.3206451399284497], [0.32083252020049513, 0.2517103939725642, 0.17313266218754284, 0.2543244236393979], [0.21346706256531833, 0.25480223120304574, 0.22985035913032398, 0.30188034710131195], [0.2942750663088079, 0.30576206090157493, 0.16922035551907724, 0.23074251727053993], [0.23382279329132616, 0.3052188848194323, 0.24517526961209482, 0.21578305227714673], [0.24011591442844324, 0.3260973294576009, 0.20594359699048495, 0.22784315912347092], [0.36377685111865665, 0.20838284492492676, 0.23207047111109683, 0.1957698328453198], [0.23449808672854774, 0.11566549853274696, 0.3752347670103374, 0.27460164772836787], [0.17388650827240526, 0.3270412704400849, 0.2572264713153504, 0.2418457499721594], [0.26312664935463353, 0.2739426629585132, 0.2728226770434463, 0.1901080106434069], [0.3344585226293196, 0.2020029017799779, 0.3609128332974618, 0.10262574229324073], [0.21071083922135203, 0.1537066802643893, 0.4416486422220866, 0.1939338382921721], [0.30092167017752663, 0.3509499650252493, 0.10746725400288899, 0.24066111079433508], [0.14334915813646817, 0.2819030577676338, 0.33069959858007597, 0.24404818551582202], [0.11201934647141841, 0.4811746321226421, 0.31080318752088043, 0.09600283388505902]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4d. Natural text, hidden", "subtitle": ""}, "work_natural_visible": {"type": "heatmap", "rows": ["1", "3", "6", "8", "10", "13", "15", "17", "20", "22", "24", "27", "29", "31", "34", "36", "38", "40", "43", "45", "47", "49", "51"], "cols": ["0", "1", "2", "3"], "values": [[0.2428849036233467, 0.2558594921178985, 0.26079042334305613, 0.24046518091569868], [0.25243245927911057, 0.24238206210889315, 0.24540600023771586, 0.25977947837428045], [0.26394413646898773, 0.2256392010471277, 0.25204578198884664, 0.2583708804950379], [0.23122936800906532, 0.2556871363991185, 0.26123762967293723, 0.2518458659188789], [0.24360674724244236, 0.2702848994941042, 0.24284855524698892, 0.2432597980164645], [0.23975098342226261, 0.26078511120980247, 0.2423418823041414, 0.2571220230637935], [0.26478169257180734, 0.2210545999961987, 0.22713717661405863, 0.28702653081793533], [0.266742091429861, 0.23530015192533793, 0.20864144961039224, 0.28931630703440886], [0.24827403352971664, 0.23901003285458214, 0.27706601745203924, 0.23564991616366202], [0.2832863665463632, 0.20943876316672877, 0.25066571068345456, 0.25660915960345354], [0.2308878354858934, 0.27532913392050223, 0.19134200664988735, 0.302441023943717], [0.25506158878928736, 0.24662016985709206, 0.24384526202553197, 0.2544729793280886], [0.1944582922416821, 0.25810265122798454, 0.2303901513417562, 0.3170489051885772], [0.241291882698996, 0.2693493993658769, 0.2574108316187273, 0.23194788631639982], [0.26855882427148653, 0.2298255259530586, 0.2556226839099014, 0.24599296586555347], [0.2439354051623428, 0.23771100713495621, 0.25358659342715617, 0.26476699427554484], [0.2184368602016516, 0.24021890707183302, 0.2807141814315528, 0.2606300512949626], [0.26640752742165014, 0.23820066452026367, 0.27073031141046894, 0.22466149664761728], [0.26123589800115216, 0.2501208740368224, 0.2639429109138355, 0.22470031704818993], [0.2606076734107837, 0.23929687968471594, 0.266679048538208, 0.23341639836629233], [0.2369511503922312, 0.23041437801561857, 0.245865499764158, 0.2867689718279922], [0.208720792803848, 0.2474534511566162, 0.256882951970686, 0.2869428040688498], [0.22757450321264433, 0.2509020002264726, 0.28906864450688946, 0.23245485205399363]], "vmax": 0.6, "fmt": "frac_pct1", "rowName": "Layer", "colName": "GPU", "rowTitle": "MoE layer", "colTitle": "GPU", "valueLabel": "of this layer's expert work", "cellHeight": 11, "title": "Figure 4e. Natural text, visible", "subtitle": ""}}}</script>
+<script>
+"use strict";
+(() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const payload = JSON.parse(document.getElementById("report-data").textContent);
+
+  const svgEl = (tag, attrs, parent) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+    if (parent) parent.appendChild(node);
+    return node;
+  };
+  const htmlEl = (tag, className, parent, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    if (parent) parent.appendChild(node);
+    return node;
+  };
+  const cssVar = (name) => `var(${name})`;
+
+  const FORMATS = {
+    int: (v) => Math.round(v).toLocaleString("en-US"),
+    num0: (v) => v.toLocaleString("en-US", { maximumFractionDigits: 0 }),
+    num1: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+    num2: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    num3: (v) => v.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
+    pct1: (v) => `${v.toFixed(1)}%`,
+    pct2: (v) => `${v.toFixed(2)}%`,
+    frac_pct1: (v) => `${(100 * v).toFixed(1)}%`,
+    frac_pct2: (v) => `${(100 * v).toFixed(2)}%`,
+    s2: (v) => `${v.toFixed(2)} s`,
+    gib1: (v) => `${v.toFixed(1)} GiB`,
+    x2: (v) => `${v.toFixed(2)}×`,
+    s0: (v) => `${v.toFixed(0)} s`,
+    pct0: (v) => `${v.toFixed(0)}%`,
+    x1: (v) => `${v.toFixed(1)}×`,
+    frac_pct0: (v) => `${(100 * v).toFixed(0)}%`,
+    compact: (v) => {
+      const a = Math.abs(v);
+      if (a >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+      if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
+      if (a >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+      return v.toFixed(0);
+    },
+  };
+  const fmt = (name, v) => (v === null || v === undefined || Number.isNaN(v) ? "–" : (FORMATS[name] || FORMATS.num2)(v));
+
+  const niceTicks = (lo, hi, count) => {
+    if (hi <= lo) hi = lo + 1;
+    const raw = (hi - lo) / Math.max(count, 1);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+    const start = Math.floor(lo / step) * step;
+    const ticks = [];
+    for (let t = start; t <= hi + step * 1e-9; t += step) ticks.push(Number(t.toFixed(10)));
+    if (ticks[ticks.length - 1] < hi) ticks.push(Number((ticks[ticks.length - 1] + step).toFixed(10)));
+    return ticks;
+  };
+
+  // ---- tooltip -----------------------------------------------------------------------------
+  const makeTooltip = (plot) => htmlEl("div", "tooltip", plot);
+  const showTooltip = (tip, plot, x, y, head, rows) => {
+    tip.replaceChildren();
+    htmlEl("div", "t-head", tip, head);
+    for (const row of rows) {
+      const line = htmlEl("div", "t-row", tip);
+      if (row.color) htmlEl("i", "", line).style.background = cssVar(row.color);
+      htmlEl("b", "", line, row.value);
+      htmlEl("span", "", line, row.label);
+    }
+    tip.style.display = "block";
+    const pw = plot.clientWidth;
+    const tw = tip.offsetWidth;
+    const left = x + 14 + tw > pw ? Math.max(0, x - 14 - tw) : x + 14;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, y - 10)}px`;
+  };
+  const hideTooltip = (tip) => { tip.style.display = "none"; };
+
+  // ---- card with legend and table view -----------------------------------------------------
+  const buildTable = (wrap, table) => {
+    const t = htmlEl("table", "", wrap);
+    if (table.caption) htmlEl("caption", "note", t, table.caption).style.textAlign = "left";
+    const head = htmlEl("tr", "", htmlEl("thead", "", t));
+    for (const c of table.columns) htmlEl("th", "", head, c);
+    const body = htmlEl("tbody", "", t);
+    for (const r of table.rows) {
+      const tr = htmlEl("tr", "", body);
+      for (const cell of r) htmlEl("td", "", tr, cell);
+    }
+  };
+  const legendFor = (parent, series, kind) => {
+    if (!series || series.length < 2) return;
+    const legend = htmlEl("div", "legend", parent);
+    for (const s of series) {
+      const item = htmlEl("span", "", legend);
+      const swatch = htmlEl("i", s.dash ? "dash" : kind, item);
+      if (s.dash) swatch.style.borderTopColor = cssVar(s.color);
+      else swatch.style.background = cssVar(s.color);
+      htmlEl("span", "", item, s.label);
+    }
+  };
+
+  // ---- line chart (crosshair + one tooltip listing every series) ---------------------------
+  const lineChart = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const H = spec.height || 230;
+    const endLabels = spec.endLabels !== false && spec.series.length <= 4;
+    const m = { l: 66, r: endLabels ? 118 : 16, t: 10, b: 38 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const xs = [...new Set(spec.series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => a - b);
+    const ys = spec.series.flatMap((s) => s.points.map((p) => p[1]).filter((v) => v !== null));
+    let yLo = spec.y.min !== undefined ? spec.y.min : Math.min(...ys);
+    let yHi = spec.y.max !== undefined ? spec.y.max : Math.max(...ys);
+    if (spec.y.min === undefined) yLo -= (yHi - yLo) * 0.08 || 1;
+    const yt = niceTicks(yLo, yHi, 4);
+    yLo = spec.y.min !== undefined ? spec.y.min : yt[0];
+    yHi = yt[yt.length - 1];
+    const xLo = xs[0], xHi = xs[xs.length - 1] === xs[0] ? xs[0] + 1 : xs[xs.length - 1];
+    const sx = (x) => m.l + ((x - xLo) / (xHi - xLo)) * iw;
+    const sy = (y) => m.t + ih - ((y - yLo) / (yHi - yLo)) * ih;
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "line chart" }, plot);
+    if (spec.shade) {
+      const [a, b] = spec.shade;
+      svgEl("rect", { x: sx(a) - 4, y: m.t, width: Math.max(sx(b) - sx(a) + 8, 8), height: ih, style: "fill: var(--shade)" }, svg);
+      svgEl("text", { x: sx(a) - 2, y: m.t + 11 }, svg).textContent = spec.shadeLabel || "warmup";
+    }
+    for (const t of yt) {
+      if (t < yLo - 1e-12 || t > yHi + 1e-12) continue;
+      svgEl("line", { x1: m.l, x2: m.l + iw, y1: sy(t), y2: sy(t), style: `stroke: var(${t === yLo ? "--baseline" : "--grid"}); stroke-width: 1` }, svg);
+      svgEl("text", { x: m.l - 8, y: sy(t) + 4, "text-anchor": "end" }, svg).textContent = fmt(spec.y.tickFmt || spec.y.fmt, t);
+    }
+    const xTicks = spec.x.ticks || niceTicks(xLo, xHi, Math.min(10, xs.length)).filter((t) => t >= xLo && t <= xHi);
+    for (const t of xTicks) {
+      svgEl("text", { x: sx(t), y: m.t + ih + 16, "text-anchor": "middle" }, svg).textContent = fmt(spec.x.fmt || "int", t);
+    }
+    svgEl("text", { class: "label", x: m.l + iw / 2, y: H - 4, "text-anchor": "middle" }, svg).textContent = spec.x.label;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + ih / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.y.label;
+    const ends = [];
+    for (const s of spec.series) {
+      let d = "";
+      let pen = false;
+      for (const [x, y] of s.points) {
+        if (y === null) { pen = false; continue; }
+        d += `${pen ? "L" : "M"}${sx(x).toFixed(2)},${sy(y).toFixed(2)}`;
+        pen = true;
+      }
+      svgEl("path", { d, style: `fill: none; stroke: var(${s.color}); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round${s.dash ? "; stroke-dasharray: 5 4" : ""}` }, svg);
+      if (spec.markers) {
+        for (const [x, y] of s.points) {
+          if (y === null) continue;
+          svgEl("circle", { cx: sx(x), cy: sy(y), r: 3.5, style: `fill: var(${s.color}); stroke: var(--surface); stroke-width: 2` }, svg);
+        }
+      }
+      const last = [...s.points].reverse().find((p) => p[1] !== null);
+      if (last) {
+        svgEl("circle", { cx: sx(last[0]), cy: sy(last[1]), r: 4, style: `fill: var(${s.color}); stroke: var(--surface); stroke-width: 2` }, svg);
+        ends.push({ y: sy(last[1]), x: sx(last[0]), s, v: last[1] });
+      }
+    }
+    if (endLabels) {
+      ends.sort((a, b) => a.y - b.y);
+      const collide = ends.some((e, i) => i > 0 && e.y - ends[i - 1].y < 26);
+      if (!collide) {
+        for (const e of ends) {
+          svgEl("line", { x1: e.x + 7, x2: e.x + 17, y1: e.y, y2: e.y, style: `stroke: var(${e.s.color}); stroke-width: 2` }, svg);
+          svgEl("text", { class: "label", x: e.x + 21, y: e.y - 2 }, svg).textContent = e.s.label;
+          svgEl("text", { x: e.x + 21, y: e.y + 11 }, svg).textContent = fmt(spec.y.fmt, e.v);
+        }
+      }
+    }
+    const cross = svgEl("line", { y1: m.t, y2: m.t + ih, style: "stroke: var(--muted); stroke-width: 1; display: none" }, svg);
+    const tip = makeTooltip(plot);
+    let index = -1;
+    const show = (i) => {
+      index = Math.max(0, Math.min(xs.length - 1, i));
+      const x = xs[index];
+      cross.setAttribute("x1", sx(x));
+      cross.setAttribute("x2", sx(x));
+      cross.style.display = "";
+      const rows = spec.series.map((s) => {
+        const p = s.points.find((q) => q[0] === x);
+        return { color: s.color, value: fmt(spec.y.fmt, p ? p[1] : null), label: s.label };
+      });
+      const yTop = Math.min(...spec.series.map((s) => { const p = s.points.find((q) => q[0] === x); return p && p[1] !== null ? sy(p[1]) : m.t + ih; }));
+      showTooltip(tip, plot, sx(x), yTop, `${spec.x.label} ${fmt(spec.x.fmt || "int", x)}`, rows);
+    };
+    const hide = () => { cross.style.display = "none"; hideTooltip(tip); };
+    const hit = svgEl("rect", { x: m.l, y: m.t, width: iw, height: ih, style: "fill: transparent" }, svg);
+    hit.addEventListener("pointermove", (ev) => {
+      const r = svg.getBoundingClientRect();
+      const px = ev.clientX - r.left;
+      let best = 0;
+      xs.forEach((x, i) => { if (Math.abs(sx(x) - px) < Math.abs(sx(xs[best]) - px)) best = i; });
+      show(best);
+    });
+    hit.addEventListener("pointerleave", hide);
+    plot.tabIndex = 0;
+    plot.addEventListener("focus", () => show(index < 0 ? xs.length - 1 : index));
+    plot.addEventListener("blur", hide);
+    plot.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowRight") { show(index + 1); ev.preventDefault(); }
+      if (ev.key === "ArrowLeft") { show(index - 1); ev.preventDefault(); }
+    });
+  };
+  const lineTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.x.label, ...spec.series.map((s) => s.label)],
+    rows: [...new Set(spec.series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => a - b).map((x) => [
+      fmt(spec.x.fmt || "int", x),
+      ...spec.series.map((s) => { const p = s.points.find((q) => q[0] === x); return fmt(spec.y.tableFmt || spec.y.fmt, p ? p[1] : null); }),
+    ]),
+  });
+
+  // ---- grouped bars (per-bar hover) --------------------------------------------------------
+  const barChart = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const H = spec.height || 220;
+    const m = { l: 66, r: 16, t: 10, b: 38 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const n = spec.categories.length, k = spec.series.length;
+    const vals = spec.series.flatMap((s) => s.values).filter((v) => v !== null && v !== undefined);
+    const yt = niceTicks(0, Math.max(...vals), 4);
+    const yHi = yt[yt.length - 1];
+    const sy = (v) => m.t + ih - (v / yHi) * ih;
+    const band = iw / n;
+    const bw = Math.min(24, (band - 12) / k - 2);
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "bar chart" }, plot);
+    for (const t of yt) {
+      svgEl("line", { x1: m.l, x2: m.l + iw, y1: sy(t), y2: sy(t), style: `stroke: var(${t === 0 ? "--baseline" : "--grid"}); stroke-width: 1` }, svg);
+      svgEl("text", { x: m.l - 8, y: sy(t) + 4, "text-anchor": "end" }, svg).textContent = fmt(spec.y.tickFmt || spec.y.fmt, t);
+    }
+    svgEl("text", { class: "label", x: m.l + iw / 2, y: H - 4, "text-anchor": "middle" }, svg).textContent = spec.x.label;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + ih / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.y.label;
+    const tip = makeTooltip(plot);
+    if (spec.refLine) {
+      svgEl("line", { x1: m.l, x2: m.l + iw, y1: sy(spec.refLine.value), y2: sy(spec.refLine.value), style: "stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 4 3" }, svg);
+      svgEl("text", { class: "label", x: m.l + iw, y: sy(spec.refLine.value) - 5, "text-anchor": "end" }, svg).textContent = spec.refLine.label;
+    }
+    spec.categories.forEach((cat, i) => {
+      const cx = m.l + band * (i + 0.5);
+      svgEl("text", { x: cx, y: m.t + ih + 16, "text-anchor": "middle" }, svg).textContent = cat;
+      const groupW = k * bw + (k - 1) * 2;
+      spec.series.forEach((s, j) => {
+        const v = s.values[i];
+        if (v === null || v === undefined) return;
+        const x = cx - groupW / 2 + j * (bw + 2);
+        const y = sy(v), h = m.t + ih - y, r = Math.min(4, h, bw / 2);
+        const d = `M${x},${m.t + ih}V${y + r}Q${x},${y} ${x + r},${y}H${x + bw - r}Q${x + bw},${y} ${x + bw},${y + r}V${m.t + ih}Z`;
+        const bar = svgEl("path", { d, style: `fill: var(${s.color})` }, svg);
+        const hit = svgEl("rect", { x: x - 1, y: m.t, width: bw + 2, height: ih, style: "fill: transparent" }, svg);
+        const on = () => { bar.style.opacity = "0.8"; showTooltip(tip, plot, x + bw, y, `${spec.x.label} ${cat}`, [{ color: s.color, value: fmt(spec.y.fmt, v), label: s.label }]); };
+        const off = () => { bar.style.opacity = ""; hideTooltip(tip); };
+        hit.addEventListener("pointermove", on);
+        hit.addEventListener("pointerleave", off);
+      });
+    });
+  };
+  const barTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.x.label, ...spec.series.map((s) => s.label)],
+    rows: spec.categories.map((c, i) => [c, ...spec.series.map((s) => fmt(spec.y.fmt, s.values[i]))]),
+  });
+
+  // ---- heatmap (per-cell hover, discrete sequential steps) ---------------------------------
+  const STEPS = 13;
+  const heatBin = (v, vmax, scale) => {
+    const f = Math.max(0, Math.min(1, v / (vmax || 1)));
+    const g = scale === "sqrt" ? Math.sqrt(f) : f;
+    return Math.min(STEPS - 1, Math.floor(g * STEPS));
+  };
+  const heatmap = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 320);
+    const rows = spec.rows.length, cols = spec.cols.length;
+    const groupEvery = spec.groupEvery || cols;
+    const nGroups = Math.ceil(cols / groupEvery);
+    const m = { l: 64, r: 10, t: spec.groupLabels ? 22 : 8, b: 30 };
+    const gap = 2;
+    const cw = (W - m.l - m.r - gap * (nGroups - 1)) / cols;
+    const ch = spec.cellHeight || 12;
+    const H = m.t + rows * ch + m.b;
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title || "heatmap" }, plot);
+    const cx = (c) => m.l + c * cw + Math.floor(c / groupEvery) * gap;
+    for (let r = 0; r < rows; r++) {
+      svgEl("text", { x: m.l - 8, y: m.t + r * ch + ch - 2, "text-anchor": "end" }, svg).textContent = spec.rows[r];
+      for (let c = 0; c < cols; c++) {
+        const v = spec.values[r][c];
+        svgEl("rect", { x: cx(c), y: m.t + r * ch, width: Math.max(cw - 0.5, 0.5), height: ch - 1, style: `fill: var(--seq-${heatBin(v, spec.vmax, spec.scale)})` }, svg);
+      }
+    }
+    if (spec.groupLabels) {
+      spec.groupLabels.forEach((label, g) => {
+        const x0 = cx(g * groupEvery), x1 = cx(Math.min(cols, (g + 1) * groupEvery) - 1) + cw;
+        svgEl("text", { x: (x0 + x1) / 2, y: m.t - 8, "text-anchor": "middle" }, svg).textContent = label;
+      });
+    }
+    svgEl("text", { class: "label", x: m.l + (W - m.l - m.r) / 2, y: H - 8, "text-anchor": "middle" }, svg).textContent = spec.colTitle;
+    svgEl("text", { class: "label", transform: `translate(12 ${m.t + (rows * ch) / 2}) rotate(-90)`, "text-anchor": "middle" }, svg).textContent = spec.rowTitle;
+    const outline = svgEl("rect", { width: cw, height: ch, style: "fill: none; stroke: var(--text-1); stroke-width: 1.5; display: none" }, svg);
+    const tip = makeTooltip(plot);
+    svg.addEventListener("pointermove", (ev) => {
+      const box = svg.getBoundingClientRect();
+      const px = ev.clientX - box.left, py = ev.clientY - box.top;
+      const r = Math.floor((py - m.t) / ch);
+      let c = -1;
+      for (let j = 0; j < cols; j++) if (px >= cx(j) && px < cx(j) + cw + gap) { c = j; break; }
+      if (r < 0 || r >= rows || c < 0) { outline.style.display = "none"; hideTooltip(tip); return; }
+      outline.setAttribute("x", cx(c));
+      outline.setAttribute("y", m.t + r * ch);
+      outline.setAttribute("width", cw);
+      outline.style.display = "";
+      const rowsOut = [{ value: fmt(spec.fmt, spec.values[r][c]), label: spec.valueLabel || "" }];
+      if (spec.cellNotes) rowsOut.push({ value: "", label: spec.cellNotes[r][c] });
+      showTooltip(tip, plot, px, py, `${spec.rowName} ${spec.rows[r]} · ${spec.colName} ${spec.cols[c]}${spec.colSuffix ? spec.colSuffix[c] : ""}`, rowsOut);
+    });
+    svg.addEventListener("pointerleave", () => { outline.style.display = "none"; hideTooltip(tip); });
+    const scale = htmlEl("div", "scale", plot);
+    htmlEl("span", "", scale, fmt(spec.fmt, 0));
+    const ramp = htmlEl("span", "ramp", scale);
+    for (let i = 0; i < STEPS; i++) htmlEl("i", "", ramp).style.background = cssVar(`--seq-${i}`);
+    htmlEl("span", "", scale, `${fmt(spec.fmt, spec.vmax)}${spec.scale === "sqrt" ? " (square-root scale)" : ""}`);
+  };
+  const heatTable = (spec) => ({
+    caption: spec.tableCaption,
+    columns: [spec.rowName, ...spec.cols.map((c) => `${spec.colName} ${c}`)],
+    rows: spec.rows.map((r, i) => [r, ...spec.values[i].map((v) => fmt(spec.fmt, v))]),
+  });
+
+
+  // ---- dot-and-interval chart: one row per method, grouped; x = change vs baseline with its 95% CI ----
+  const forestChart = (plot, spec) => {
+    const W = Math.max(plot.clientWidth, 360);
+    const rowH = 26, groupH = 30;
+    const m = { l: 200, r: 210, t: 6, b: 42 };
+    const rows = [];
+    let y = m.t;
+    for (const g of spec.groups) {
+      rows.push({ header: g.label, y: y + 20 });
+      y += groupH;
+      for (const r of g.rows) { rows.push({ ...r, y: y + rowH / 2 }); y += rowH; }
+    }
+    const H = y + m.b;
+    const iw = W - m.l - m.r;
+    const vals = spec.groups.flatMap((g) => g.rows.flatMap((r) => [r.lo, r.hi, r.mean]));
+    const ticks = niceTicks(Math.min(0, ...vals), Math.max(0, ...vals), 6);
+    const lo = ticks[0], hi = ticks[ticks.length - 1];
+    const sx = (v) => m.l + ((v - lo) / (hi - lo)) * iw;
+    const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": spec.title }, plot);
+    for (const t of ticks) {
+      svgEl("line", { x1: sx(t), x2: sx(t), y1: m.t, y2: y, style: `stroke: var(${Math.abs(t) < 1e-12 ? "--baseline" : "--grid"}); stroke-width: ${Math.abs(t) < 1e-12 ? 1.5 : 1}` }, svg);
+      svgEl("text", { x: sx(t), y: y + 16, "text-anchor": "middle" }, svg).textContent = fmt(spec.x.tickFmt || spec.x.fmt, t);
+    }
+    svgEl("text", { class: "label", x: m.l + iw / 2, y: H - 6, "text-anchor": "middle" }, svg).textContent = spec.x.label;
+    if (spec.x.leftLabel) svgEl("text", { x: m.l + 2, y: y + 30 }, svg).textContent = spec.x.leftLabel;
+    if (spec.x.rightLabel) svgEl("text", { x: m.l + iw - 2, y: y + 30, "text-anchor": "end" }, svg).textContent = spec.x.rightLabel;
+    const [title1, title2] = spec.valueTitles || ["", ""];
+    svgEl("text", { class: "label", x: m.l + iw + 70, y: m.t + 20, "text-anchor": "end", style: "font-weight: 600" }, svg).textContent = title1;
+    svgEl("text", { class: "label", x: m.l + iw + 88, y: m.t + 20, style: "font-weight: 600" }, svg).textContent = title2;
+    const tip = makeTooltip(plot);
+    for (const r of rows) {
+      if (r.header) {
+        svgEl("text", { class: "label", x: 4, y: r.y, style: "font-weight: 600; fill: var(--text-1)" }, svg).textContent = r.header;
+        continue;
+      }
+      svgEl("text", { class: "label", x: m.l - 14, y: r.y + 4, "text-anchor": "end" }, svg).textContent = r.label;
+      const stroke = `stroke: var(${r.color}); stroke-width: 2; stroke-linecap: round`;
+      svgEl("line", { x1: sx(r.lo), x2: sx(r.hi), y1: r.y, y2: r.y, style: stroke }, svg);
+      for (const v of [r.lo, r.hi]) svgEl("line", { x1: sx(v), x2: sx(v), y1: r.y - 5, y2: r.y + 5, style: stroke }, svg);
+      svgEl("circle", { cx: sx(r.mean), cy: r.y, r: 5, style: `fill: var(${r.color}); stroke: var(--surface); stroke-width: 2` }, svg);
+      svgEl("text", { class: "label", x: m.l + iw + 70, y: r.y + 4, "text-anchor": "end", style: "fill: var(--text-1)" }, svg).textContent = r.valueLabel;
+      svgEl("text", { class: "label", x: m.l + iw + 88, y: r.y + 4 }, svg).textContent = r.valueLabel2;
+      const hit = svgEl("rect", { x: 0, y: r.y - rowH / 2, width: W, height: rowH, style: "fill: transparent" }, svg);
+      hit.addEventListener("pointermove", (ev) => {
+        const box = svg.getBoundingClientRect();
+        showTooltip(tip, plot, ev.clientX - box.left, r.y, r.tipHead, r.tipRows);
+      });
+      hit.addEventListener("pointerleave", () => hideTooltip(tip));
+    }
+  };
+  const forestTable = (spec) => ({ caption: spec.tableCaption, columns: spec.tableColumns, rows: spec.tableRows });
+
+  // ---- mount -------------------------------------------------------------------------------
+  const RENDERERS = { line: [lineChart, lineTable, "line"], bars: [barChart, barTable, "rect"], heatmap: [heatmap, heatTable, null], forest: [forestChart, forestTable, null] };
+  const mounted = [];
+  const mount = (host) => {
+    const spec = payload.charts[host.dataset.chart];
+    if (!spec) { host.textContent = `missing chart ${host.dataset.chart}`; return; }
+    const [render, tabulate, legendKind] = RENDERERS[spec.type];
+    const fig = htmlEl("figure", "card", host);
+    const head = htmlEl("div", "card-head", fig);
+    const titles = htmlEl("div", "", head);
+    htmlEl("h3", "", titles, spec.title);
+    if (spec.subtitle) htmlEl("p", "subtitle", titles, spec.subtitle);
+    const toggle = htmlEl("button", "", head, "Table");
+    toggle.type = "button";
+    toggle.setAttribute("aria-pressed", "false");
+    if (legendKind) legendFor(fig, spec.series, legendKind);
+    const plot = htmlEl("div", "plot", fig);
+    const wrap = htmlEl("div", "table-wrap", fig);
+    wrap.hidden = true;
+    buildTable(wrap, tabulate(spec));
+    if (spec.caption) {
+      const cap = htmlEl("figcaption", "", fig);
+      cap.innerHTML = spec.caption;
+    }
+    toggle.addEventListener("click", () => {
+      const showTable = wrap.hidden;
+      wrap.hidden = !showTable;
+      plot.hidden = showTable;
+      toggle.textContent = showTable ? "Chart" : "Table";
+      toggle.setAttribute("aria-pressed", String(showTable));
+    });
+    const draw = () => { plot.replaceChildren(); render(plot, spec); };
+    mounted.push(draw);
+    draw();
+  };
+  document.querySelectorAll("[data-chart]").forEach(mount);
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => mounted.forEach((draw) => draw()), 150);
+  });
+
+  const themeButton = document.getElementById("theme-toggle");
+  if (themeButton) {
+    const modes = ["auto", "light", "dark"];
+    themeButton.addEventListener("click", () => {
+      const current = document.documentElement.dataset.theme || "auto";
+      const next = modes[(modes.indexOf(current) + 1) % modes.length];
+      if (next === "auto") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = next;
+      themeButton.textContent = `Theme: ${next}`;
+    });
+  }
+})();
+</script>
+</body>
+</html>

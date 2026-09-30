@@ -23,18 +23,26 @@
 # Usage: bash experiments/main-v1/run_all.sh        (SKIP_SMOKE=1 skips the smoke tests)
 # Runs that already finished (runs/<name>/exit.json with exit code 0) are skipped, so the script can be
 # restarted after an interruption.
+# Variants such as main-v1.1 reuse this queue through environment overrides (defaults are main-v1's):
+# EXP_CONFIG_DIR, EXP_RUNS_DIR, EXP_PLACEMENTS_DIR, EXP_NOTES, EXP_REPORT, EXP_TITLE, plus run_one.sh's
+# EXP_GPUS, EXP_NPROC and EXP_MASTER_PORT.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$HERE/env.sh"
 cd "$EXP_REPO"
+CONFIG_DIR=${EXP_CONFIG_DIR:-$HERE/configs}
+RUNS_DIR=${EXP_RUNS_DIR:-$HERE/runs}
+PLACEMENTS_DIR=${EXP_PLACEMENTS_DIR:-$HERE/placements}
+export EXP_CONFIG_DIR="$CONFIG_DIR" EXP_RUNS_DIR="$RUNS_DIR"
+mkdir -p "$RUNS_DIR" "$PLACEMENTS_DIR"
 
-python "$HERE/check_configs.py"
+python "$HERE/check_configs.py" --configs "$CONFIG_DIR"
 [ -f "$HERE/data/train.jsonl" ] || python "$HERE/prepare_data.py"
 python "$HERE/test_main_v1.py"
 
 finished() {
-  python -c "import json, sys; sys.exit(json.load(open(sys.argv[1]))['exit_code'] != 0)" "$HERE/runs/$1/exit.json" 2>/dev/null
+  python -c "import json, sys; sys.exit(json.load(open(sys.argv[1]))['exit_code'] != 0)" "$RUNS_DIR/$1/exit.json" 2>/dev/null
 }
 run() {  # run <config> <run_name> [--dotted.key value ...]
   local config=$1 name=$2
@@ -50,18 +58,18 @@ if [ "${SKIP_SMOKE:-0}" != "1" ]; then
   smoke=(--step_scheduler.max_steps 3 --wandb.group smoke)
   run fixed_default smoke_fixed_default "${smoke[@]}"
   python "$HERE/expert_placement.py" --iterations 2000 \
-    --routing "$HERE/runs/smoke_fixed_default/routing.npz" --output "$HERE/runs/smoke_fixed_default/placement.json"
+    --routing "$RUNS_DIR/smoke_fixed_default/routing.npz" --output "$RUNS_DIR/smoke_fixed_default/placement.json"
   run fixed_placement smoke_fixed_placement "${smoke[@]}" \
-    --expert_placement.path experiments/main-v1/runs/smoke_fixed_default/placement.json
+    --expert_placement.path "$(realpath --relative-to="$EXP_REPO" "$RUNS_DIR/smoke_fixed_default/placement.json")"
   run fixed_natural_visible smoke_fixed_natural_visible "${smoke[@]}"
   run batchmax_random smoke_batchmax_random "${smoke[@]}"
 fi
 
 for setting in fixed batchmax; do
   run "${setting}_default" "${setting}_default"
-  if [ ! -f "$HERE/placements/$setting.json" ]; then
+  if [ ! -f "$PLACEMENTS_DIR/$setting.json" ]; then
     python "$HERE/expert_placement.py" \
-      --routing "$HERE/runs/${setting}_default/routing.npz" --output "$HERE/placements/$setting.json"
+      --routing "$RUNS_DIR/${setting}_default/routing.npz" --output "$PLACEMENTS_DIR/$setting.json"
   fi
   for method in random placement natural_masked natural_visible; do
     run "${setting}_${method}" "${setting}_${method}"
@@ -69,4 +77,6 @@ for setting in fixed batchmax; do
   run "${setting}_default" "${setting}_default_repeat"
 done
 
-python "$HERE/make_report.py" --output "$EXP_REPO/hub/main-v1/index.html"
+python "$HERE/make_report.py" --runs-dir "$RUNS_DIR" --notes "${EXP_NOTES:-$HERE/notes.html}" \
+  --output "${EXP_REPORT:-$EXP_REPO/hub/main-v1/index.html}" --title "${EXP_TITLE:-Padding and MoE training speed — main-v1}" \
+  ${EXP_REFERENCE_RUNS:+--reference-runs-dir "$EXP_REFERENCE_RUNS"}

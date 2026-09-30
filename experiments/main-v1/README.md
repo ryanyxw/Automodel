@@ -29,6 +29,7 @@ repeated at the end of that setting's queue to measure run-to-run noise. The rep
 - GPU 1's cooling failed at 02:58 UTC during `batchmax_placement`'s second pass (85–91 °C, about 60% throughput).
   That pass is left out of the report, and the run is kept in `runs/excluded/` once the queue resumes. The
   interrupted `batchmax_natural_masked` is also in `runs/excluded/`.
+- `experiments/main-v1.1` repeats the whole matrix with LoRA on GPUs 4–7 (full-parameter training does not fit on 4 GPUs).
 - Still to run: `batchmax_placement` (both passes again), `batchmax_natural_masked`, `batchmax_natural_visible`,
   `batchmax_default_repeat` (about 1.5 h).
 - To resume once every GPU passes `python experiments/main-v1/gpu_health.py`, move `runs/batchmax_placement` to

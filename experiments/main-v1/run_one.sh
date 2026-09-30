@@ -19,6 +19,8 @@
 #   config    file stem under experiments/main-v1/configs/ (e.g. fixed_default)
 #   run_name  output directory under experiments/main-v1/runs/ and the wandb run name
 # Extra arguments are forwarded as config overrides, e.g. --step_scheduler.max_steps 3
+# Optional environment overrides (defaults are main-v1's): EXP_CONFIG_DIR, EXP_RUNS_DIR, EXP_GPUS (comma-separated
+# physical GPU indices, exported as CUDA_VISIBLE_DEVICES), EXP_NPROC (processes, default 8), EXP_MASTER_PORT.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -27,8 +29,13 @@ source "$HERE/env.sh"
 CONFIG_NAME=$1
 RUN_NAME=$2
 shift 2
-CONFIG="$HERE/configs/$CONFIG_NAME.yaml"
-RUN_DIR="$HERE/runs/$RUN_NAME"
+CONFIG="${EXP_CONFIG_DIR:-$HERE/configs}/$CONFIG_NAME.yaml"
+RUN_DIR="${EXP_RUNS_DIR:-$HERE/runs}/$RUN_NAME"
+NPROC=${EXP_NPROC:-8}
+MASTER_PORT=${EXP_MASTER_PORT:-29511}
+if [ -n "${EXP_GPUS:-}" ]; then
+  export CUDA_VISIBLE_DEVICES="$EXP_GPUS"
+fi
 [ -f "$CONFIG" ] || { echo "unknown config: $CONFIG_NAME ($CONFIG)" >&2; exit 2; }
 mkdir -p "$RUN_DIR"
 REL_RUN_DIR=$(realpath --relative-to="$EXP_REPO" "$RUN_DIR")
@@ -70,14 +77,14 @@ processes_pid=$!
 trap 'kill $telemetry_pid $processes_pid 2>/dev/null || true' EXIT
 
 cat > "$RUN_DIR/launch.json" <<EOF
-{"config": "$(realpath --relative-to="$EXP_REPO" "$CONFIG")", "run_name": "$RUN_NAME",
+{"config": "$(realpath --relative-to="$EXP_REPO" "$CONFIG")", "run_name": "$RUN_NAME", "nproc": $NPROC, "gpus": "${CUDA_VISIBLE_DEVICES:-all}",
  "overrides": "$*", "git_commit": "$EXP_GIT_COMMIT", "host": "$(hostname)",
  "start_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "venv": "$EXP_VENV"}
 EOF
 
 cd "$EXP_REPO"
 set +e
-torchrun --nproc-per-node 8 --master-port 29511 "$HERE/train.py" \
+torchrun --nproc-per-node "$NPROC" --master-port "$MASTER_PORT" "$HERE/train.py" \
   --config "$CONFIG" \
   --probe.output_dir "$REL_RUN_DIR" \
   --checkpoint.checkpoint_dir "$REL_RUN_DIR/checkpoint" \

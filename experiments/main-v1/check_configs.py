@@ -14,11 +14,12 @@
 
 """Fail if a main-v1 config differs from its reference config anywhere except where intended.
 
-Usage: python experiments/main-v1/check_configs.py
+Usage: python experiments/main-v1/check_configs.py [--configs <dir>]   (default: main-v1's configs)
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -66,11 +67,14 @@ def _flatten(node: object, prefix: tuple[str, ...] = ()) -> dict[tuple[str, ...]
 
 def main() -> None:
     """Compare every config with its reference and exit non-zero on an unintended difference."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--configs", type=Path, default=_CONFIGS)
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     failures = []
     for name, (reference, intended) in PAIRS.items():
-        config = _flatten(yaml.safe_load((_CONFIGS / f"{name}.yaml").read_text()))
-        base = _flatten(yaml.safe_load((_CONFIGS / f"{reference}.yaml").read_text()))
+        config = _flatten(yaml.safe_load((args.configs / f"{name}.yaml").read_text()))
+        base = _flatten(yaml.safe_load((args.configs / f"{reference}.yaml").read_text()))
         allowed = _ALWAYS_ALLOWED + intended
         diff = sorted(key for key in base.keys() | config.keys() if base.get(key) != config.get(key))
         unexpected = [key for key in diff if not any(key[: len(prefix)] == prefix for prefix in allowed)]

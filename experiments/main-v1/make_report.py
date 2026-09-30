@@ -43,14 +43,11 @@ logger = logging.getLogger(__name__)
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parents[1]
-WORLD = 8
 PEAK_TFLOPS = 989.0
-EXPERTS_PER_GPU = 16
 # nvidia-smi clocks_event_reasons bits: 0x20 software thermal slowdown, 0x40 hardware thermal slowdown.
 THERMAL_BITS = 0x20 | 0x40
 _STEP_LOG_RE = re.compile(r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) \| INFO \| root \| step (\d+) \|")
 MIN_STEPS = 10  # a run enters a window's averages and comparisons only with at least this many clean steps
-MICROBATCHES_PER_STEP = 8  # per GPU: 128 conversations / (8 GPUs * 2 per micro-batch)
 
 
 @dataclass(frozen=True)
@@ -104,6 +101,12 @@ class Run:
     layer_ids: list[int]
     microbatch_shapes: np.ndarray
     """Per step, GPU and micro-batch: (batch, padded length, real tokens), [recorded steps, GPUs, micro-batches, 3]."""
+    world: int
+    """Number of GPUs (training processes)."""
+    experts_per_gpu: int
+    """Routed experts each GPU hosts in every MoE layer."""
+    gpus: list[int] | None
+    """Physical GPU indices the run used (``CUDA_VISIBLE_DEVICES``), or ``None`` for all GPUs of the node."""
     overheated_steps: set[int]
     """Steps during which any GPU reported thermal slowdown; left out of every average and comparison."""
     wandb_url: str | None
@@ -119,6 +122,9 @@ def load_run(runs_dir: Path, name: str) -> Run | None:
         return None
     records = [json.loads(line) for line in (run_dir / "probe_steps.jsonl").read_text().splitlines()]
     routing = np.load(run_dir / "routing.npz", allow_pickle=False)
+    meta = json.loads(str(routing["metadata"]))
+    visible = json.loads((run_dir / "run_metadata.json").read_text())["environment"].get("CUDA_VISIBLE_DEVICES")
+    gpus = [int(gpu) for gpu in visible.split(",")] if visible else None
     match = re.search(r"https://wandb\.ai/\S+/runs/\w+", (run_dir / "train.log").read_text(errors="replace"))
     return Run(
         name=name,
@@ -127,25 +133,33 @@ def load_run(runs_dir: Path, name: str) -> Run | None:
         routing_steps=routing["steps"].tolist(),
         layer_ids=routing["layer_ids"].tolist(),
         microbatch_shapes=routing["microbatch_shapes"],
-        overheated_steps=_overheated_steps(run_dir),
+        world=int(routing["microbatch_shapes"].shape[1]),
+        experts_per_gpu=int(meta["experts_per_ep_rank"]),
+        gpus=gpus,
+        overheated_steps=_overheated_steps(run_dir, gpus),
         wandb_url=match.group(0) if match else None,
         start_utc=json.loads((run_dir / "launch.json").read_text())["start_utc"],
         end_utc=json.loads(exit_path.read_text())["end_utc"],
     )
 
 
-def _overheated_steps(run_dir: Path) -> set[int]:
-    """Steps that overlap a GPU thermal slowdown sample in ``gpu_telemetry.csv`` (500 ms nvidia-smi samples).
+def _overheated_steps(run_dir: Path, gpus: list[int] | None) -> set[int]:
+    """Steps that overlap a thermal slowdown sample of one of the run's GPUs in ``gpu_telemetry.csv``.
 
-    A step spans from the previous step's log line to its own (``train.log``, 1 s resolution), padded by 1 s.
+    The telemetry has one row per GPU every 500 ms. A step spans from the previous step's log line to its own
+    (``train.log``, 1 s resolution), padded by 1 s. ``gpus`` restricts the check to the run's physical GPUs
+    (``None``: every GPU).
     """
     hot = []
     with (run_dir / "gpu_telemetry.csv").open() as f:
         reader = csv.reader(f)
         header = [name.strip() for name in next(reader)]
         time_col, reason_col = header.index("timestamp"), header.index("clocks_event_reasons.active")
+        gpu_col = header.index("index")
         for row in reader:
-            if len(row) == len(header) and int(row[reason_col].strip(), 16) & THERMAL_BITS:
+            if len(row) != len(header) or (gpus is not None and int(row[gpu_col]) not in gpus):
+                continue
+            if int(row[reason_col].strip(), 16) & THERMAL_BITS:
                 hot.append(datetime.datetime.strptime(row[time_col].strip()[:19], "%Y/%m/%d %H:%M:%S"))
     if not hot:
         return set()
@@ -172,7 +186,8 @@ def _gpu_loads(run: Run, window: Window) -> np.ndarray:
     rows = [i for i, step in enumerate(run.routing_steps) if step in clean]
     counts = run.counts[rows].sum(axis=3)  # [steps, micro-batches, layers, experts], all token categories
     n_steps, n_micro, n_layers, n_experts = counts.shape
-    loads = counts.reshape(n_steps, n_micro, n_layers, n_experts // EXPERTS_PER_GPU, EXPERTS_PER_GPU).sum(axis=-1)
+    per_gpu = run.experts_per_gpu
+    loads = counts.reshape(n_steps, n_micro, n_layers, n_experts // per_gpu, per_gpu).sum(axis=-1)
     return loads.reshape(n_steps * n_micro, n_layers, -1).astype(np.float64)
 
 
@@ -180,8 +195,9 @@ def window_metrics(run: Run, window: Window) -> dict[str, float]:
     """Averages of one run over one window (ratios of sums, so long steps weigh by their length)."""
     records = [run.steps[step] for step in _window_steps(run, window)]
     wall = np.asarray([r["probe/step_time_wall_s"] for r in records])
-    useful_tflop = np.asarray([r["probe/tflops_per_gpu_effective_wall"] for r in records]) * WORLD * wall
-    padded_tflop = np.asarray([r["probe/tflops_per_gpu_padded_wall"] for r in records]) * WORLD * wall
+    world, micro_per_step = run.world, run.microbatch_shapes.shape[2]
+    useful_tflop = np.asarray([r["probe/tflops_per_gpu_effective_wall"] for r in records]) * world * wall
+    padded_tflop = np.asarray([r["probe/tflops_per_gpu_padded_wall"] for r in records]) * world * wall
     real = sum(r["probe/tokens_real"] for r in records)
     padded = sum(r["probe/tokens_padded"] for r in records)
     loads = _gpu_loads(run, window)
@@ -196,11 +212,11 @@ def window_metrics(run: Run, window: Window) -> dict[str, float]:
     return {
         "steps": len(records),
         "step_time_s": float(wall.mean()),
-        "useful_mfu_pct": float(100 * useful_tflop.sum() / (wall.sum() * WORLD * PEAK_TFLOPS)),
-        "padded_mfu_pct": float(100 * padded_tflop.sum() / (wall.sum() * WORLD * PEAK_TFLOPS)),
+        "useful_mfu_pct": float(100 * useful_tflop.sum() / (wall.sum() * world * PEAK_TFLOPS)),
+        "padded_mfu_pct": float(100 * padded_tflop.sum() / (wall.sum() * world * PEAK_TFLOPS)),
         "pad_fraction": float(1.0 - real / padded),
-        "real_tokens_per_s_per_gpu": float(real / (wall.sum() * WORLD)),
-        "tokens_per_microbatch_per_gpu": float(padded / (len(records) * WORLD * MICROBATCHES_PER_STEP)),
+        "real_tokens_per_s_per_gpu": float(real / (wall.sum() * world)),
+        "tokens_per_microbatch_per_gpu": float(padded / (len(records) * world * micro_per_step)),
         "imbalance_mean": float(imbalance.mean()),
         "imbalance_worst": float(imbalance.max()),
         "peak_mem_gib": float(max(r["probe/mem_reserved_peak_gib_max_rank"] for r in records)),
@@ -523,6 +539,15 @@ def text_values(runs: dict[str, Run], results: dict, data_stats: dict) -> dict[s
             values[f"heat.{method.key}.maxshare"] = f"{100 * np.median(share.max(axis=1)):.0f}%"
             values[f"heat.{method.key}.maxsharetop"] = f"{100 * share.max():.0f}%"
             values[f"heat.{method.key}.minshare"] = f"{100 * np.median(share.min(axis=1)):.0f}%"
+    reference = runs.get("fixed_default")
+    if reference is not None:
+        values["setup.world"] = str(reference.world)
+        values["setup.experts_per_gpu"] = str(reference.experts_per_gpu)
+        values["setup.microbatches"] = str(reference.microbatch_shapes.shape[2])
+        gpus = reference.gpus or list(range(reference.world))
+        values["setup.gpus"] = (
+            f"{gpus[0]}–{gpus[-1]}" if gpus == list(range(gpus[0], gpus[-1] + 1)) else ", ".join(map(str, gpus))
+        )
     if "batchmax_default" in runs:
         for window in WINDOWS[1:]:
             share = new_length_share(runs["batchmax_default"], window)
@@ -555,8 +580,12 @@ def text_values(runs: dict[str, Run], results: dict, data_stats: dict) -> dict[s
     return values
 
 
-def build_report(runs: dict[str, Run], results: dict, data_stats: dict, notes: str) -> tuple[str, dict]:
+def build_report(
+    runs: dict[str, Run], results: dict, data_stats: dict, notes: str, reference: dict[str, str] | None = None
+) -> tuple[str, dict]:
     """Return the report body (``notes.html`` with its ``{{key}}`` placeholders filled) and the chart payload.
+
+    ``reference`` holds another experiment's ``text_values``; ``notes.html`` cites them as ``{{ref.<key>}}``.
 
     Raises:
         KeyError: If ``notes.html`` references a value that the runs do not provide.
@@ -584,12 +613,12 @@ def build_report(runs: dict[str, Run], results: dict, data_stats: dict, notes: s
             "Figure 1. Change in step time for each method",
             "Compared with the default method at the same steps (same data)",
         ),
-        "mfu": ("Figure 2. Useful MFU by method", "Share of the 8 GPUs' peak BF16 throughput spent on real tokens"),
+        "mfu": ("Figure 2. Useful MFU by method", "Share of the GPUs' peak BF16 throughput spent on real tokens"),
         "imbalance": (
             "Figure 3. How uneven the expert work is",
             "Expert work on the busiest GPU ÷ the average GPU, averaged over MoE layers and micro-batches",
         ),
-        "steps_fixed": ("Figure 5a. Step time at every step: fixed length", "Step 1 (about 40 s of setup) not shown"),
+        "steps_fixed": ("Figure 5a. Step time at every step: fixed length", "Step 1 (one-time setup) not shown"),
         "steps_batchmax": (
             "Figure 5b. Step time at every step: longest in batch",
             "Steps 1–40: first pass over the data; steps 41–80: second pass over the same data",
@@ -600,6 +629,7 @@ def build_report(runs: dict[str, Run], results: dict, data_stats: dict, notes: s
     for key, spec in charts.items():
         spec["title"], spec["subtitle"] = titles[key]
     values = text_values(runs, results, data_stats)
+    values.update({f"ref.{key}": value for key, value in (reference or {}).items()})
     values["RESULTS_TABLE"] = results_table(results)
     values["RUNS_TABLE"] = runs_table(runs)
     body = re.sub(r"\{\{([\w.]+)\}\}", lambda match: values[match.group(1)], notes)
@@ -611,6 +641,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--runs-dir", type=Path, default=_HERE / "runs")
     parser.add_argument("--output", type=Path, default=_REPO / "hub" / "main-v1" / "index.html")
+    parser.add_argument("--notes", type=Path, default=_HERE / "notes.html")
+    parser.add_argument("--title", default="Padding and MoE training speed — main-v1")
+    parser.add_argument(
+        "--reference-runs-dir",
+        type=Path,
+        default=None,
+        help="runs of another experiment whose numbers notes.html can cite as {{ref.<key>}} (e.g. main-v1 for main-v1.1)",
+    )
     parser.add_argument("--print-only", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -621,11 +659,15 @@ def main() -> None:
     if args.print_only:
         return
     data_stats = json.loads((_HERE / "data" / "data_stats.json").read_text())
-    notes = (_HERE / "notes.html").read_text()
-    body, payload = build_report(runs, results, data_stats, notes)
+    notes = args.notes.read_text()
+    reference = None
+    if args.reference_runs_dir is not None:
+        reference_runs = load_runs(args.reference_runs_dir)
+        reference = text_values(reference_runs, analyze(reference_runs), data_stats)
+    body, payload = build_report(runs, results, data_stats, notes, reference)
     template = (_HERE / "report_template.html").read_text()
     page = (
-        template.replace("{{TITLE}}", "Padding and MoE training speed — main-v1")
+        template.replace("{{TITLE}}", args.title)
         .replace("{{BODY_HTML}}", body)
         .replace("{{PAYLOAD_JSON}}", json.dumps(payload).replace("</", "<\\/"))
     )
